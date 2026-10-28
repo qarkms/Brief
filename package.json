@@ -1,0 +1,17 @@
+{
+  "name": "brief",
+  "version": "1.0.0",
+  "description": "밴드 실시간 메트로놈 & 파트 브리핑 앱",
+  "type": "module",
+  "main": "server/index.js",
+  "scripts": {
+    "start": "node server/index.js",
+    "test": "node --test test/*.test.js"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "ws": "^8.18.0"
+  }
+}
