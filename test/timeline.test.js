@@ -100,3 +100,8 @@ test('잘못된 입력은 안전한 값으로 정리된다', () => {
   assert.equal(s.sections[0].name, 'Section');
   assert.deepEqual(normalizeSetlist('nope'), []);
 });
+
+test('Tag 파트 프리셋', async () => {
+  const { SECTION_PRESETS } = await import('../public/js/timeline.js');
+  assert.ok(SECTION_PRESETS.includes('Tag'));
+});

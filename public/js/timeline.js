@@ -3,8 +3,10 @@
 
 export const SECTION_PRESETS = [
   'Intro', 'Verse', 'Pre-Chorus', 'Chorus', 'Post-Chorus',
-  'Bridge', 'Interlude', 'Solo', 'Break', 'Outro', 'Ending',
+  'Bridge', 'Interlude', 'Solo', 'Break', 'Tag', 'Outro', 'Ending',
 ];
+
+export const SHEET_ID = /^[a-f0-9]{32}$/;
 
 export const LIMITS = {
   bpm: [20, 400],
@@ -14,6 +16,7 @@ export const LIMITS = {
   gapSeconds: [0, 120],
   songs: 100,
   sections: 100,
+  sheets: 40,
 };
 
 export function clamp(value, [lo, hi], fallback) {
@@ -44,6 +47,18 @@ export function normalizeSection(s = {}) {
   };
 }
 
+export function normalizeSheets(list) {
+  if (!Array.isArray(list)) return [];
+  return list
+    .filter((p) => p && typeof p.id === 'string' && SHEET_ID.test(p.id))
+    .slice(0, LIMITS.sheets)
+    .map((p) => ({
+      id: p.id,
+      w: Math.round(clamp(p.w, [1, 20000], 1)),
+      h: Math.round(clamp(p.h, [1, 20000], 1)),
+    }));
+}
+
 export function normalizeSong(s = {}) {
   let sections = Array.isArray(s.sections)
     ? s.sections.slice(0, LIMITS.sections).map(normalizeSection)
@@ -56,6 +71,7 @@ export function normalizeSong(s = {}) {
     beatsPerBar: Math.round(clamp(s.beatsPerBar, LIMITS.beatsPerBar, 4)),
     countInBars: Math.round(clamp(s.countInBars, LIMITS.countInBars, 1)),
     sections,
+    sheets: normalizeSheets(s.sheets),
   };
 }
 

@@ -138,9 +138,10 @@ export class Room {
 }
 
 export class RoomManager {
-  constructor(onChange) {
+  constructor(onChange, onRemove = () => {}) {
     this.rooms = new Map();
     this.onChange = onChange;
+    this.onRemove = onRemove;
   }
 
   newCode() {
@@ -166,6 +167,7 @@ export class RoomManager {
       if (room.emptySince && now - room.emptySince > EMPTY_ROOM_TTL_MS) {
         room.dispose();
         this.rooms.delete(code);
+        this.onRemove(code);
       }
     }
   }

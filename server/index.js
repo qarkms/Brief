@@ -4,12 +4,20 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { WebSocketServer } from 'ws';
 import { RoomManager } from './rooms.js';
+import { MAX_SHEET_BYTES, SheetStore } from './sheets.js';
 
-const PUBLIC_DIR = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../public');
+const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+const PUBLIC_DIR = path.join(ROOT, 'public');
+// 브라우저에서 PDF 악보를 이미지로 바꿀 때 쓰는 pdf.js (인터넷 없는 합주실에서도 동작하도록 직접 제공)
+const VENDOR = {
+  '/vendor/pdf.min.mjs': path.join(ROOT, 'node_modules/pdfjs-dist/build/pdf.min.mjs'),
+  '/vendor/pdf.worker.min.mjs': path.join(ROOT, 'node_modules/pdfjs-dist/build/pdf.worker.min.mjs'),
+};
 
 const MIME = {
   '.html': 'text/html; charset=utf-8',
   '.js': 'text/javascript; charset=utf-8',
+  '.mjs': 'text/javascript; charset=utf-8',
   '.css': 'text/css; charset=utf-8',
   '.svg': 'image/svg+xml',
   '.png': 'image/png',
@@ -17,10 +25,22 @@ const MIME = {
   '.webmanifest': 'application/manifest+json',
 };
 
-function serveStatic(req, res) {
-  const { pathname } = new URL(req.url, 'http://localhost');
-  if (pathname === '/healthz') {
-    res.writeHead(200, { 'content-type': 'text/plain' }).end('ok');
+function serveFile(res, file) {
+  fs.readFile(file, (err, data) => {
+    if (err) {
+      res.writeHead(404, { 'content-type': 'text/plain' }).end('Not found');
+      return;
+    }
+    res.writeHead(200, {
+      'content-type': MIME[path.extname(file)] || 'application/octet-stream',
+      'cache-control': 'no-cache',
+    }).end(data);
+  });
+}
+
+function serveStatic(req, res, pathname) {
+  if (VENDOR[pathname]) {
+    serveFile(res, VENDOR[pathname]);
     return;
   }
   let rel;
@@ -36,22 +56,91 @@ function serveStatic(req, res) {
     res.writeHead(403).end();
     return;
   }
-  fs.readFile(file, (err, data) => {
-    if (err) {
-      res.writeHead(404, { 'content-type': 'text/plain' }).end('Not found');
-      return;
-    }
-    res.writeHead(200, {
-      'content-type': MIME[path.extname(file)] || 'application/octet-stream',
-      'cache-control': 'no-cache',
-    }).end(data);
-  });
+  serveFile(res, file);
 }
 
 const cleanName = (v) => (typeof v === 'string' ? v.trim().slice(0, 24) : '') || '멤버';
 
-export function createServer() {
-  const server = http.createServer(serveStatic);
+const json = (res, status, body) => {
+  res.writeHead(status, { 'content-type': 'application/json' }).end(JSON.stringify(body));
+};
+
+function readBody(req, limit) {
+  return new Promise((resolve, reject) => {
+    const chunks = [];
+    let size = 0;
+    req.on('data', (c) => {
+      size += c.length;
+      if (size > limit) {
+        reject(new Error('TOO_LARGE'));
+        req.destroy();
+        return;
+      }
+      chunks.push(c);
+    });
+    req.on('end', () => resolve(Buffer.concat(chunks)));
+    req.on('error', reject);
+  });
+}
+
+export function createServer({ dataDir = process.env.DATA_DIR || path.resolve('data') } = {}) {
+  const sheets = new SheetStore(path.join(dataDir, 'sheets'));
+
+  // PUT /api/sheets/:id?room=CODE  (x-host-token 헤더 필요) — 방장만 업로드
+  async function uploadSheet(req, res, id, url) {
+    const room = rooms.get(url.searchParams.get('room'));
+    if (!room) return json(res, 404, { error: 'ROOM_NOT_FOUND' });
+    if (req.headers['x-host-token'] !== room.hostToken) return json(res, 403, { error: 'NOT_HOST' });
+    let buf;
+    try {
+      buf = await readBody(req, MAX_SHEET_BYTES);
+    } catch {
+      return json(res, 413, { error: 'TOO_LARGE' });
+    }
+    const type = String(req.headers['content-type'] || '').split(';')[0].trim();
+    const err = sheets.put(id, room.code, type, buf);
+    if (err) return json(res, err === 'ROOM_FULL' ? 507 : 400, { error: err });
+    return json(res, 200, { ok: true });
+  }
+
+  function serveSheet(req, res, id) {
+    const meta = sheets.get(id);
+    if (!meta) {
+      res.writeHead(404).end();
+      return;
+    }
+    const headers = {
+      'content-type': meta.type,
+      'content-length': meta.size,
+      // 같은 id의 내용은 바뀌지 않는다
+      'cache-control': 'public, max-age=31536000, immutable',
+    };
+    if (req.method === 'HEAD') {
+      res.writeHead(200, headers).end();
+      return;
+    }
+    fs.createReadStream(sheets.file(id)).on('error', () => res.destroy()).pipe(res.writeHead(200, headers));
+  }
+
+  const server = http.createServer((req, res) => {
+    const url = new URL(req.url, 'http://localhost');
+    const { pathname } = url;
+    if (pathname === '/healthz') {
+      res.writeHead(200, { 'content-type': 'text/plain' }).end('ok');
+      return;
+    }
+    const sheetUpload = pathname.match(/^\/api\/sheets\/([a-f0-9]{32})$/);
+    if (sheetUpload && req.method === 'PUT') {
+      uploadSheet(req, res, sheetUpload[1], url);
+      return;
+    }
+    const sheet = pathname.match(/^\/sheets\/([a-f0-9]{32})$/);
+    if (sheet && (req.method === 'GET' || req.method === 'HEAD')) {
+      serveSheet(req, res, sheet[1]);
+      return;
+    }
+    serveStatic(req, res, pathname);
+  });
   const wss = new WebSocketServer({ server, path: '/ws', maxPayload: 512 * 1024 });
 
   const send = (ws, msg) => {
@@ -64,7 +153,7 @@ export function createServer() {
     }
   };
 
-  const rooms = new RoomManager(broadcast);
+  const rooms = new RoomManager(broadcast, (code) => sheets.removeRoom(code));
   const sweeper = setInterval(() => rooms.sweep(), 60 * 1000);
   sweeper.unref();
 

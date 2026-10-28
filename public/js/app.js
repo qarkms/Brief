@@ -6,13 +6,14 @@ import {
 import {
   formatDuration, loadLibrary, openEditor, removeFromLibrary,
 } from './editor.js';
+import {
+  buildFormStrip, el, hydrateIcons, icon, sectionTone, updateFormStrip,
+} from './ui.js';
+import {
+  ensureSheets, preload, sheetUrl, uploadSheetFile,
+} from './sheets.js';
 
 const $ = (id) => document.getElementById(id);
-const el = (tag, props = {}, ...children) => {
-  const node = Object.assign(document.createElement(tag), props);
-  node.append(...children);
-  return node;
-};
 
 // ---------- 저장소 ----------
 const store = {
@@ -43,6 +44,7 @@ const app = {
   plan: null,
   playId: null,
   pendingOnOpen: null,
+  playingSong: null,
 };
 
 const isHost = () => !!app.state && app.state.hostId === app.me;
@@ -55,7 +57,7 @@ function toast(msg) {
   t.textContent = msg;
   t.classList.add('show');
   clearTimeout(toastTimer);
-  toastTimer = setTimeout(() => t.classList.remove('show'), 2200);
+  toastTimer = setTimeout(() => t.classList.remove('show'), 2400);
 }
 
 // ---------- 화면 전환 ----------
@@ -63,6 +65,7 @@ function showHome(error = '') {
   $('view-room').classList.add('hidden');
   $('view-home').classList.remove('hidden');
   $('audio-gate').classList.add('hidden');
+  closeScore();
   $('home-error').textContent = error;
   document.body.classList.remove('host');
   releaseWakeLock();
@@ -144,15 +147,16 @@ function leaveRoom() {
   app.state = null;
   app.plan = null;
   app.playId = null;
+  app.playingSong = null;
   store.set('brief.session', null);
   history.replaceState(null, '', location.pathname);
 }
 
 // ---------- 방 상태 ----------
+let ensureTimer;
 function onState(state) {
   app.state = state;
   document.body.classList.toggle('host', isHost());
-  if (isHost()) store.set('brief.setlist', state.setlist);
 
   const pb = state.playback;
   if ((pb && pb.playId) !== app.playId) {
@@ -163,12 +167,28 @@ function onState(state) {
     else engine.stop();
   }
 
+  if (isHost()) {
+    store.set('brief.setlist', state.setlist);
+    // 서버가 재시작돼 악보가 사라졌으면 이 기기에 보관된 파일로 복구
+    clearTimeout(ensureTimer);
+    ensureTimer = setTimeout(() => {
+      ensureSheets(state.setlist, { room: app.code, hostToken: hostTokenFor(app.code) })
+        .then((n) => {
+          if (!n) return;
+          toast(`악보 ${n}장을 다시 올렸어요`);
+          score.key = null;
+        });
+    }, 300);
+  }
+
   $('member-count').textContent = state.members.length;
   renderMembers();
   renderSetlist();
   renderStructure();
   renderOptions();
   renderTransport();
+  stageFormSong = null;
+  score.key = null;
 }
 
 function renderOptions() {
@@ -181,65 +201,61 @@ function renderOptions() {
 
 function renderTransport() {
   const playing = !!app.state.playback;
-  const btn = $('btn-play');
-  btn.textContent = playing ? '■ 정지' : '▶ 시작';
-  btn.classList.toggle('stop', playing);
+  $('btn-play').classList.toggle('stop', playing);
+  $('play-label').textContent = playing ? '정지' : '시작';
 }
 
 function songMeta(song) {
-  return `${song.bpm} BPM · ${song.beatsPerBar}박 · ${song.sections.length}파트 · ${formatDuration(songDuration(song))}`;
+  return `${song.bpm} BPM · ${song.beatsPerBar}박 · ${formatDuration(songDuration(song))}`;
 }
 
 function renderSetlist() {
   const { setlist, selectedSong } = app.state;
   const host = isHost();
-  const list = $('setlist');
-  list.replaceChildren(...setlist.map((song, i) => {
+  $('setlist').replaceChildren(...setlist.map((song, i) => {
+    const title = el('div', { className: 'title' }, el('span', { textContent: song.title }));
+    if (song.sheets.length) title.append(icon('score'));
+    const form = el('div', { className: 'form-strip mini-form' });
+    buildFormStrip(form, song, { labels: false });
     const li = el(
       'li',
       { className: i === selectedSong ? 'selected' : '' },
       el('span', { className: 'num', textContent: i + 1 }),
-      el(
-        'div',
-        { className: 'info' },
-        el('div', { className: 'title', textContent: song.title }),
-        el('div', { className: 'meta', textContent: songMeta(song) }),
-      ),
+      el('div', { className: 'info' }, title, el('div', { className: 'meta', textContent: songMeta(song) }), form),
     );
     li.dataset.index = i;
     if (host) {
-      const act = (label, title, fn) => el('button', {
+      const act = (name, label, fn) => el('button', {
         type: 'button',
-        textContent: label,
-        title,
+        title: label,
+        ariaLabel: label,
         onclick: (e) => {
           e.stopPropagation();
           fn();
         },
-      });
+      }, icon(name));
       li.append(el(
         'div',
         { className: 'acts' },
-        act('↑', '위로', () => moveSong(i, -1)),
-        act('↓', '아래로', () => moveSong(i, 1)),
-        act('✎', '편집', () => editSong(i)),
+        act('up', '위로', () => moveSong(i, -1)),
+        act('down', '아래로', () => moveSong(i, 1)),
+        act('edit', '편집', () => editSong(i)),
       ));
       li.onclick = () => conn.send('select', { songIndex: i, sectionIndex: 0 });
     }
     return li;
   }));
-  app.lastPlayingSong = null;
+  lastPlayingLi = undefined;
 }
 
-function structureSongIndex() {
-  return app.playingSong ?? app.state.selectedSong;
+function displaySongs() {
+  return app.state.playback ? app.state.playback.songs : app.state.setlist;
 }
 
 function renderStructure() {
   if (!app.state) return;
-  const si = structureSongIndex();
-  const songs = app.state.playback ? app.state.playback.songs : app.state.setlist;
-  const song = songs[si];
+  const si = app.playingSong ?? app.state.selectedSong;
+  const song = displaySongs()[si];
   const box = $('structure');
   if (!song) {
     box.replaceChildren();
@@ -247,17 +263,16 @@ function renderStructure() {
   }
   const selectable = isHost() && !app.state.playback;
   box.replaceChildren(...song.sections.map((sec, k) => {
+    const extra = [sec.bpm ? `${sec.bpm} BPM` : '', sec.beatsPerBar ? `${sec.beatsPerBar}박` : ''].filter(Boolean).join(' · ');
     const chip = el(
       'button',
       { type: 'button', className: 'chip' },
       el('span', { className: 'n', textContent: sec.name }),
-      el('span', {
-        className: 'b',
-        textContent: `${sec.bars}마디${sec.bpm ? ` · ${sec.bpm}` : ''}${sec.beatsPerBar ? ` · ${sec.beatsPerBar}박` : ''}`,
-      }),
+      el('span', { className: 'b', textContent: `${sec.bars}마디${extra ? ` · ${extra}` : ''}` }),
     );
     chip.dataset.k = k;
-    if (!app.state.playback && k === app.state.selectedSection && si === app.state.selectedSong) {
+    chip.dataset.tone = sectionTone(sec.name);
+    if (!app.state.playback && k === app.state.selectedSection && si === app.state.selectedSong && k > 0) {
       chip.classList.add('selected');
     }
     chip.onclick = () => {
@@ -266,12 +281,16 @@ function renderStructure() {
     };
     return chip;
   }));
-  app.lastChipKey = null;
+  lastChipKey = null;
 }
 
 // ---------- 방장 동작 ----------
 function pushSetlist(setlist) {
   conn.send('setlist', { setlist });
+}
+
+function uploader(file, onProgress) {
+  return uploadSheetFile(file, { room: app.code, hostToken: hostTokenFor(app.code), onProgress });
 }
 
 function moveSong(i, dir) {
@@ -287,6 +306,7 @@ function editSong(i) {
   const song = app.state.setlist[i];
   openEditor(structuredClone(song), {
     toast,
+    upload: uploader,
     onSave: (s) => {
       const list = [...app.state.setlist];
       list[i] = s;
@@ -316,6 +336,7 @@ function addSong() {
   openEditor(song, {
     isNew: true,
     toast,
+    upload: uploader,
     onSave: (s) => {
       pushSetlist([...app.state.setlist, s]);
       conn.send('select', { songIndex: app.state.setlist.length });
@@ -339,13 +360,18 @@ function stepSong(dir) {
 function renderMembers() {
   const host = isHost();
   $('member-list').replaceChildren(...app.state.members.map((m) => {
-    const li = el('li', {}, el('span', { className: 'name', textContent: m.name }));
-    if (m.isHost) li.append(el('span', { className: 'badge', textContent: '방장' }));
+    const li = el(
+      'li',
+      {},
+      el('span', { className: 'avatar', textContent: [...m.name][0] || '?' }),
+      el('span', { className: 'name', textContent: m.name }),
+    );
+    if (m.isHost) li.append(el('span', { className: 'badge' }, icon('crown'), '방장'));
     if (m.id === app.me) li.append(el('span', { className: 'badge me', textContent: '나' }));
     if (host && m.id !== app.me) {
       li.append(el('button', {
         type: 'button',
-        className: 'btn small',
+        className: 'btn ghost sm',
         textContent: '방장 넘기기',
         onclick: () => {
           if (confirm(`${m.name}님에게 방장을 넘길까요?`)) conn.send('transfer', { to: m.id });
@@ -368,15 +394,15 @@ function renderLibrary() {
     'li',
     {},
     el('span', {
-      className: 'name',
+      className: 'name clickable',
       onclick: () => {
         pushSetlist([...app.state.setlist, { ...song, id: makeId() }]);
         toast(`"${song.title}" 추가됨`);
       },
-    }, el('strong', { textContent: song.title }), el('div', { className: 'hint', textContent: songMeta(song) })),
+    }, el('div', { textContent: song.title }), el('div', { className: 'hint', textContent: songMeta(song) })),
     el('button', {
       type: 'button',
-      className: 'btn small danger',
+      className: 'btn danger-ghost sm',
       textContent: '삭제',
       onclick: () => {
         if (!confirm(`보관함에서 "${song.title}" 삭제?`)) return;
@@ -387,52 +413,83 @@ function renderLibrary() {
   )));
 }
 
-// ---------- 무대 화면 (매 프레임) ----------
-let lastBeatKey = null;
-let lastDots = null;
-let lastBarHtml = null;
-
-function setText(id, text) {
-  if (id === 'stage-bar') lastBarHtml = null;
-  const node = $(id);
-  if (node.textContent !== text) node.textContent = text;
-}
-
-function renderDots(beats, active) {
-  const box = $('beat-dots');
-  if (lastDots !== beats) {
-    box.replaceChildren(...Array.from({ length: beats }, (_, i) => el('span', { className: i === 0 ? 'dot first' : 'dot' })));
-    lastDots = beats;
-  }
-  [...box.children].forEach((d, i) => d.classList.toggle('on', i === active));
-}
-
+// ---------- 현재 위치 계산 ----------
 function nextSectionInfo(plan, idx) {
   const bar = plan.bars[idx];
   for (let j = idx + 1; j < plan.bars.length; j++) {
     const b = plan.bars[j];
-    if (b.songIndex !== bar.songIndex) return { song: b.songIndex, barsUntil: null };
+    if (b.songIndex !== bar.songIndex) return { song: b.songIndex };
     if (b.sectionIndex !== bar.sectionIndex) return { sectionIndex: b.sectionIndex, barsUntil: j - idx };
   }
   return null;
 }
 
-function renderIdle() {
-  const { setlist, selectedSong, selectedSection } = app.state;
-  const song = setlist[selectedSong];
-  setPlayingSong(null);
-  setText('stage-song-title', `${selectedSong + 1}. ${song.title}`);
-  setText('stage-bpm', `${song.bpm} BPM`);
-  setText('stage-status', isHost() ? '시작 버튼을 누르면 모두 함께 시작해요' : '방장의 시작을 기다리는 중');
-  setText('stage-section', song.sections[selectedSection].name);
-  $('stage-section').classList.remove('countin');
-  const bars = song.sections.reduce((n, s) => n + s.bars, 0);
-  setText('stage-bar', `${bars}마디 · ${formatDuration(songDuration(song))}`);
-  setText('stage-next', selectedSection > 0 ? `${selectedSection + 1}번째 파트부터 시작` : ' ');
-  $('stage-next').classList.remove('soon');
-  $('stage').classList.remove('briefing');
-  $('stage-progress').style.width = '0%';
-  renderDots(song.beatsPerBar, -1);
+/** 지금 이 순간 무엇이 연주되고 있는지 */
+function position() {
+  const { state, plan } = app;
+  const pb = state.playback;
+  if (!pb || !plan) {
+    const si = state.selectedSong;
+    return {
+      mode: 'idle', songIndex: si, song: state.setlist[si], sectionIndex: state.selectedSection,
+    };
+  }
+  const t = (conn.serverNow() - pb.startAt) / 1000;
+  if (t < 0) return { mode: 'pre', songIndex: pb.startSongIndex, song: pb.songs[pb.startSongIndex], wait: -t };
+  const idx = findBarIndex(plan, t);
+  if (idx === -1) {
+    const upcoming = plan.songs.find((s) => s.start > t);
+    if (!upcoming) {
+      const lastSong = plan.songs[plan.songs.length - 1].songIndex;
+      return { mode: 'end', songIndex: lastSong, song: pb.songs[lastSong] };
+    }
+    return {
+      mode: 'gap', songIndex: upcoming.songIndex, song: pb.songs[upcoming.songIndex], wait: upcoming.start - t,
+    };
+  }
+  const bar = plan.bars[idx];
+  const into = (t - bar.t) / bar.dur;
+  const meta = plan.songs.find((s) => s.songIndex === bar.songIndex);
+  return {
+    mode: 'play',
+    idx,
+    bar,
+    songIndex: bar.songIndex,
+    song: pb.songs[bar.songIndex],
+    sectionIndex: bar.sectionIndex,
+    beat: Math.min(bar.beats - 1, Math.floor((t - bar.t) / bar.beatDur)),
+    sectionProgress: (bar.bar - 1 + into) / bar.barsInSection,
+    songProgress: meta ? (t - meta.start) / (meta.end - meta.start) : 0,
+    next: nextSectionInfo(plan, idx),
+  };
+}
+
+const sectionName = (pos) => (pos.sectionIndex < 0 ? '카운트' : pos.song.sections[pos.sectionIndex].name);
+const sectionToneOf = (pos) => (pos.sectionIndex < 0 ? 'count' : sectionTone(sectionName(pos)));
+
+// ---------- 무대 화면 (매 프레임) ----------
+let lastBeatKey = null;
+let lastBarHtml = null;
+let lastChipKey = null;
+let lastPlayingLi;
+let stageFormSong = null;
+
+function setText(id, text) {
+  const node = $(id);
+  if (node.textContent !== text) node.textContent = text;
+}
+
+function renderBeats(box, beats, active) {
+  if (box.childElementCount !== beats) {
+    box.replaceChildren(...Array.from({ length: beats }, (_, i) => el('span', { className: i === 0 ? 'beat first' : 'beat' })));
+  }
+  for (let i = 0; i < beats; i++) box.children[i].classList.toggle('on', i === active);
+}
+
+function setBarHtml(html) {
+  if (lastBarHtml === html) return;
+  lastBarHtml = html;
+  $('stage-bar').innerHTML = html;
 }
 
 function setPlayingSong(si) {
@@ -441,128 +498,244 @@ function setPlayingSong(si) {
   renderStructure();
 }
 
-function highlight(si, sectionIndex, nextIndex) {
-  const key = `${si}:${sectionIndex}:${nextIndex}`;
-  if (app.lastChipKey === key) return;
-  app.lastChipKey = key;
-  $('structure').querySelectorAll('.chip').forEach((c) => {
-    const k = Number(c.dataset.k);
-    c.classList.toggle('current', k === sectionIndex);
-    c.classList.toggle('next', k === nextIndex);
-  });
-  const playingSong = app.state.playback ? si : null;
-  if (app.lastPlayingSong !== playingSong) {
-    app.lastPlayingSong = playingSong;
+function highlight(pos) {
+  const playing = pos.mode === 'play';
+  const cur = playing ? pos.sectionIndex : -1;
+  const next = playing && pos.next && pos.next.barsUntil ? pos.next.sectionIndex : -1;
+  const key = `${pos.songIndex}:${cur}:${next}`;
+  if (lastChipKey !== key) {
+    lastChipKey = key;
+    $('structure').querySelectorAll('.chip').forEach((c) => {
+      const k = Number(c.dataset.k);
+      c.classList.toggle('current', k === cur);
+      c.classList.toggle('next', k === next);
+    });
+  }
+  const playingSong = app.state.playback ? pos.songIndex : null;
+  if (lastPlayingLi !== playingSong) {
+    lastPlayingLi = playingSong;
     $('setlist').querySelectorAll('li').forEach((li) => {
       li.classList.toggle('playing', Number(li.dataset.index) === playingSong);
     });
   }
 }
 
-function renderPlaying() {
-  const pb = app.state.playback;
-  const plan = app.plan;
-  const t = (conn.serverNow() - pb.startAt) / 1000;
+function renderStage(pos) {
   const stage = $('stage');
+  const { song } = pos;
+  setText('stage-song-title', `${pos.songIndex + 1}. ${song.title}`);
 
-  if (t < 0) {
-    const song = pb.songs[pb.startSongIndex];
-    setPlayingSong(pb.startSongIndex);
-    setText('stage-song-title', `${pb.startSongIndex + 1}. ${song.title}`);
-    setText('stage-status', `시작까지 ${(-t).toFixed(1)}초`);
-    setText('stage-section', '준비');
-    setText('stage-bar', ' ');
-    setText('stage-next', ' ');
-    renderDots(song.beatsPerBar, -1);
-    return;
+  if (stageFormSong !== song) {
+    stageFormSong = song;
+    buildFormStrip($('stage-form'), song, { labels: false });
   }
 
-  const idx = findBarIndex(plan, t);
-  if (idx === -1) {
-    // 곡 사이 간격 또는 종료
-    const upcoming = plan.songs.find((s) => s.start > t);
-    stage.classList.remove('briefing');
-    $('stage-section').classList.remove('countin');
-    if (upcoming) {
-      const song = pb.songs[upcoming.songIndex];
-      setPlayingSong(upcoming.songIndex);
-      highlight(upcoming.songIndex, -1, 0);
-      setText('stage-song-title', `${upcoming.songIndex + 1}. ${song.title}`);
-      setText('stage-bpm', `${song.bpm} BPM`);
-      setText('stage-status', `다음 곡까지 ${Math.ceil(upcoming.start - t)}초`);
-      setText('stage-section', song.title);
-      setText('stage-bar', ' ');
-      setText('stage-next', '다음 곡');
-      renderDots(song.beatsPerBar, -1);
-    } else {
-      setText('stage-status', '끝');
-      setText('stage-section', '끝');
-      setText('stage-next', ' ');
-      renderDots(lastDots || 4, -1);
-    }
-    return;
-  }
-
-  const bar = plan.bars[idx];
-  const song = pb.songs[bar.songIndex];
-  const beat = Math.min(bar.beats - 1, Math.floor((t - bar.t) / bar.beatDur));
-  setPlayingSong(bar.songIndex);
-  setText('stage-song-title', `${bar.songIndex + 1}. ${song.title}`);
-  setText('stage-bpm', `${Math.round(bar.bpm * 10) / 10} BPM`);
-  setText('stage-status', '재생 중');
-
-  const countIn = bar.sectionIndex < 0;
-  setText('stage-section', countIn ? '카운트' : song.sections[bar.sectionIndex].name);
-  $('stage-section').classList.toggle('countin', countIn);
-  const barHtml = `마디 <b>${bar.bar}</b> / ${bar.barsInSection}`;
-  if (lastBarHtml !== barHtml) {
-    lastBarHtml = barHtml;
-    $('stage-bar').innerHTML = barHtml;
-  }
-  renderDots(bar.beats, beat);
-
-  const next = nextSectionInfo(plan, idx);
-  const nextEl = $('stage-next');
   let soon = false;
-  let nextIdx = -1;
-  if (!next) {
-    setText('stage-next', bar.bar === bar.barsInSection ? '마지막 마디' : '곡의 마지막 파트');
-  } else if (next.barsUntil === null) {
-    const s = pb.songs[next.song];
-    setText('stage-next', `다음 곡: ${s.title}`);
+  if (pos.mode === 'play') {
+    const { bar } = pos;
+    stage.dataset.tone = sectionToneOf(pos);
+    setText('stage-bpm', `${Math.round(bar.bpm * 10) / 10} BPM`);
+    setText('stage-status', '재생 중');
+    setText('stage-section', sectionName(pos));
+    setBarHtml(`마디 <b>${bar.bar}</b> / ${bar.barsInSection}`);
+    renderBeats($('beat-dots'), bar.beats, pos.beat);
+
+    const { next } = pos;
+    if (!next) {
+      setText('stage-next', bar.bar === bar.barsInSection ? '마지막 마디' : '마지막 파트');
+    } else if (next.barsUntil === undefined) {
+      setText('stage-next', `다음 곡 · ${app.state.playback.songs[next.song].title}`);
+    } else {
+      const name = song.sections[next.sectionIndex].name;
+      soon = next.barsUntil === 1;
+      setText('stage-next', soon ? `▸ ${name}` : `다음 ${name} · ${next.barsUntil}마디 후`);
+    }
+    updateFormStrip($('stage-form'), pos.sectionIndex, pos.sectionProgress, soon ? next.sectionIndex : -1);
+
+    const beatKey = `${pos.idx}:${pos.beat}`;
+    if (beatKey !== lastBeatKey) {
+      lastBeatKey = beatKey;
+      if (pos.beat === 0) {
+        stage.classList.add('flash');
+        setTimeout(() => stage.classList.remove('flash'), 90);
+      }
+    }
   } else {
-    const name = song.sections[next.sectionIndex].name;
-    nextIdx = next.sectionIndex;
-    soon = next.barsUntil === 1;
-    setText('stage-next', soon ? `▶ ${name}` : `다음: ${name} · ${next.barsUntil}마디 후`);
-  }
-  nextEl.classList.toggle('soon', soon);
-  stage.classList.toggle('briefing', soon);
-  highlight(bar.songIndex, bar.sectionIndex, nextIdx);
-
-  const meta = plan.songs.find((s) => s.songIndex === bar.songIndex);
-  const pct = meta ? ((t - meta.start) / (meta.end - meta.start)) * 100 : 0;
-  $('stage-progress').style.width = `${Math.max(0, Math.min(100, pct))}%`;
-
-  const beatKey = `${idx}:${beat}`;
-  if (beatKey !== lastBeatKey) {
-    lastBeatKey = beatKey;
-    if (beat === 0) {
-      stage.classList.add('flash');
-      setTimeout(() => stage.classList.remove('flash'), 90);
+    setText('stage-bpm', `${song.bpm} BPM`);
+    renderBeats($('beat-dots'), song.beatsPerBar, -1);
+    updateFormStrip($('stage-form'), -1, 0, -1);
+    if (pos.mode === 'idle') {
+      const sec = song.sections[pos.sectionIndex];
+      stage.dataset.tone = sectionTone(sec.name);
+      setText('stage-status', isHost() ? '시작을 누르면 모두 함께 시작해요' : '방장의 시작을 기다리는 중');
+      setText('stage-section', sec.name);
+      const bars = song.sections.reduce((n, s) => n + s.bars, 0);
+      setBarHtml(`${bars}마디 · ${formatDuration(songDuration(song))}`);
+      setText('stage-next', pos.sectionIndex > 0 ? `${pos.sectionIndex + 1}번째 파트부터 시작` : ' ');
+    } else if (pos.mode === 'pre') {
+      stage.dataset.tone = 'count';
+      setText('stage-status', `시작까지 ${pos.wait.toFixed(1)}초`);
+      setText('stage-section', '준비');
+      setBarHtml('&nbsp;');
+      setText('stage-next', ' ');
+    } else if (pos.mode === 'gap') {
+      stage.dataset.tone = 'count';
+      setText('stage-status', `다음 곡까지 ${Math.ceil(pos.wait)}초`);
+      setText('stage-section', song.title);
+      setBarHtml('&nbsp;');
+      setText('stage-next', '다음 곡');
+    } else {
+      stage.dataset.tone = 'count';
+      setText('stage-status', ' ');
+      setText('stage-section', '끝');
+      setBarHtml('&nbsp;');
+      setText('stage-next', ' ');
     }
   }
+  $('stage-next').classList.toggle('soon', soon);
+  stage.classList.toggle('briefing', soon);
+  highlight(pos);
+}
+
+// ---------- 악보 보기 ----------
+const score = { open: false, key: null, songIndex: null, page: 0 };
+
+function openScore() {
+  score.open = true;
+  score.key = null;
+  $('view-score').classList.remove('hidden');
+}
+
+function closeScore() {
+  score.open = false;
+  $('view-score').classList.add('hidden');
+}
+
+function pagesPerView(sheets) {
+  return sheets.length > 1 && innerWidth > innerHeight * 1.15 ? 2 : 1;
+}
+
+function renderScorePages(song) {
+  const { sheets } = song;
+  const box = $('score-pages');
+  const empty = !sheets.length;
+  box.classList.toggle('hidden', empty);
+  $('score-empty').classList.toggle('hidden', !empty);
+  $('view-score').querySelector('.score-nav').classList.toggle('hidden', sheets.length < 2);
+  if (empty) {
+    box.replaceChildren();
+    return;
+  }
+  const per = pagesPerView(sheets);
+  score.page = Math.max(0, Math.min(score.page, sheets.length - 1));
+  score.page -= score.page % per;
+  const shown = sheets.slice(score.page, score.page + per);
+  box.classList.toggle('spread', shown.length > 1);
+  box.replaceChildren(...shown.map((p, i) => el('img', {
+    src: sheetUrl(p.id), alt: `${score.page + i + 1}쪽`, draggable: false, decoding: 'async',
+  })));
+  const last = score.page + shown.length;
+  setText('score-page', `${shown.length > 1 ? `${score.page + 1}–${last}` : score.page + 1} / ${sheets.length}`);
+  // 다음 페이지 미리 받기
+  preload(sheets.slice(last, last + per));
+}
+
+function turnPage(dir) {
+  if (!score.open || !app.state) return;
+  const song = displaySongs()[score.songIndex];
+  if (!song || !song.sheets.length) return;
+  const per = pagesPerView(song.sheets);
+  const page = score.page + dir * per;
+  if (page < 0 || page >= song.sheets.length) return;
+  score.page = page;
+  renderScorePages(song);
+}
+
+function renderScore(pos) {
+  const { song } = pos;
+  const key = `${pos.songIndex}:${song.id}:${song.sheets.map((p) => p.id).join(',')}`;
+  if (score.key !== key) {
+    // 곡이 바뀌면(자동 다음 곡 포함) 그 곡의 악보 첫 페이지로
+    if (score.songIndex !== pos.songIndex) score.page = 0;
+    score.key = key;
+    score.songIndex = pos.songIndex;
+    setText('score-title', `${pos.songIndex + 1}. ${song.title}`);
+    buildFormStrip($('score-form'), song);
+    renderScorePages(song);
+    const nextSong = displaySongs()[pos.songIndex + 1];
+    if (nextSong) preload(nextSong.sheets.slice(0, 2));
+  }
+
+  const bar = $('view-score').querySelector('.score-bar');
+  let brief = '';
+  if (pos.mode === 'play') {
+    bar.dataset.tone = sectionToneOf(pos);
+    setText('score-pos', `${sectionName(pos)} ${pos.bar.bar}/${pos.bar.barsInSection}`);
+    renderBeats($('score-beats'), pos.bar.beats, pos.beat);
+    const { next } = pos;
+    const soon = next && next.barsUntil === 1;
+    if (soon) brief = `▸ ${song.sections[next.sectionIndex].name}`;
+    updateFormStrip($('score-form'), pos.sectionIndex, pos.sectionProgress, soon ? next.sectionIndex : -1);
+  } else {
+    bar.dataset.tone = 'count';
+    let label = '대기';
+    if (pos.mode === 'pre') label = `시작 ${pos.wait.toFixed(1)}초 전`;
+    else if (pos.mode === 'gap') label = `다음 곡 ${Math.ceil(pos.wait)}초 전`;
+    else if (pos.mode === 'end') label = '끝';
+    setText('score-pos', label);
+    renderBeats($('score-beats'), song.beatsPerBar, -1);
+    updateFormStrip($('score-form'), -1, 0, -1);
+  }
+  setText('score-brief', brief);
+}
+
+function setupScoreInput() {
+  const pages = $('score-pages');
+  let downX = null;
+  let downY = null;
+  pages.addEventListener('pointerdown', (e) => {
+    downX = e.clientX;
+    downY = e.clientY;
+  });
+  pages.addEventListener('pointerup', (e) => {
+    if (downX === null) return;
+    const dx = e.clientX - downX;
+    const dy = e.clientY - downY;
+    downX = null;
+    if (Math.abs(dx) > 50 && Math.abs(dx) > Math.abs(dy)) {
+      turnPage(dx < 0 ? 1 : -1);
+    } else if (Math.abs(dx) < 10 && Math.abs(dy) < 10) {
+      // 탭: 왼쪽 40%는 이전, 나머지는 다음 페이지
+      const r = pages.getBoundingClientRect();
+      turnPage(e.clientX - r.left < r.width * 0.4 ? -1 : 1);
+    }
+  });
+  $('score-prev').onclick = () => turnPage(-1);
+  $('score-next').onclick = () => turnPage(1);
+  $('btn-score').onclick = openScore;
+  $('btn-score-close').onclick = closeScore;
+  // 블루투스 페이지 넘김 페달은 보통 화살표/PageDown 키를 보낸다
+  document.addEventListener('keydown', (e) => {
+    if (!score.open) return;
+    if (['ArrowRight', 'ArrowDown', 'PageDown', ' '].includes(e.key)) turnPage(1);
+    else if (['ArrowLeft', 'ArrowUp', 'PageUp'].includes(e.key)) turnPage(-1);
+    else if (e.key === 'Escape') closeScore();
+    else return;
+    e.preventDefault();
+  });
+  addEventListener('resize', () => { score.key = null; });
 }
 
 function frame() {
-  if (app.state && !$('view-room').classList.contains('hidden')) {
-    if (app.state.playback && app.plan) renderPlaying();
-    else {
-      renderIdle();
-      highlight(null, -1, -1);
-    }
-  }
+  // 화면 오류가 나도 다음 프레임은 계속 그린다
   requestAnimationFrame(frame);
+  if (app.state && !$('view-room').classList.contains('hidden')) {
+    const pos = position();
+    if (app.state.playback) setPlayingSong(pos.songIndex);
+    else setPlayingSong(null);
+    renderStage(pos);
+    if (score.open) renderScore(pos);
+  }
 }
 
 // ---------- 화면 꺼짐 방지 ----------
@@ -723,8 +896,10 @@ $('file-import').onchange = async (e) => {
 
 // ---------- 시작 ----------
 function boot() {
+  hydrateIcons();
   $('home-name').value = store.get('brief.name', '');
   bindSettings();
+  setupScoreInput();
   const params = new URLSearchParams(location.search);
   const urlCode = (params.get('room') || '').toUpperCase();
   const session = store.get('brief.session', null);

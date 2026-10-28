@@ -2,6 +2,10 @@
 import {
   makeId, normalizeSong, SECTION_PRESETS, songDuration,
 } from './timeline.js';
+import {
+  buildFormStrip, el, icon, sectionTone,
+} from './ui.js';
+import { sheetUrl } from './sheets.js';
 
 const $ = (id) => document.getElementById(id);
 const LIBRARY_KEY = 'brief.library';
@@ -38,92 +42,14 @@ export function removeFromLibrary(id) {
   saveLibrary(loadLibrary().filter((s) => s.id !== id));
 }
 
-const el = (tag, props = {}, ...children) => {
-  const node = Object.assign(document.createElement(tag), props);
-  node.append(...children);
-  return node;
-};
-
-let current = null; // { song, onSave, onDelete }
+let current = null; // { song, sheets, onSave, onDelete, upload, toast }
 
 function readNum(input) {
   return input.value === '' ? null : Number(input.value);
 }
 
-function collect() {
-  const rows = [...$('ed-sections').querySelectorAll('.sec-row:not(.sec-head)')];
-  return normalizeSong({
-    id: current.song.id,
-    title: $('ed-title').value,
-    bpm: readNum($('ed-bpm')),
-    beatsPerBar: readNum($('ed-beats')),
-    countInBars: readNum($('ed-countin')),
-    sections: rows.map((r) => ({
-      name: r.querySelector('.name').value,
-      bars: readNum(r.querySelector('.bars')),
-      bpm: readNum(r.querySelector('.bpm')),
-      beatsPerBar: readNum(r.querySelector('.beats')),
-      cue: r.querySelector('.cue').value,
-    })),
-  });
-}
-
-function updateTotal() {
-  const song = collect();
-  const bars = song.sections.reduce((n, s) => n + s.bars, 0);
-  $('ed-total').textContent = `${bars}마디 · ${formatDuration(songDuration(song))}`;
-}
-
-function nameInput(value) {
-  const node = el('input', {
-    className: 'name', value, maxLength: 40, placeholder: '파트 이름', required: true,
-  });
-  node.setAttribute('list', 'section-presets');
-  return node;
-}
-
-function sectionRow(sec) {
-  const input = (cls, attrs) => el('input', { className: cls, ...attrs });
-  const row = el('div', { className: 'sec-row' });
-  const move = (dir) => {
-    const sib = dir < 0 ? row.previousElementSibling : row.nextElementSibling;
-    if (!sib || sib.classList.contains('sec-head')) return;
-    if (dir < 0) sib.before(row);
-    else sib.after(row);
-    renumber();
-  };
-  const btn = (label, title, fn) => el('button', { type: 'button', textContent: label, title, onclick: fn });
-  row.append(
-    el('span', { className: 'idx' }),
-    nameInput(sec.name),
-    input('bars', {
-      value: sec.bars, type: 'number', min: 1, max: 512, inputMode: 'numeric', placeholder: '마디', title: '마디 수', required: true,
-    }),
-    input('bpm', {
-      value: sec.bpm ?? '', type: 'number', min: 20, max: 400, step: 0.5, inputMode: 'decimal', placeholder: 'BPM', title: 'BPM (비우면 곡 기본값)',
-    }),
-    input('beats', {
-      value: sec.beatsPerBar ?? '', type: 'number', min: 1, max: 16, inputMode: 'numeric', placeholder: '박자', title: '한 마디 박 수 (비우면 곡 기본값)',
-    }),
-    input('cue', { value: sec.cue, maxLength: 80, placeholder: '음성 문구 (선택)', title: '비우면 파트 이름을 읽어요' }),
-    el(
-      'div',
-      { className: 'row-acts' },
-      btn('↑', '위로', () => move(-1)),
-      btn('↓', '아래로', () => move(1)),
-      btn('⧉', '복제', () => {
-        const copy = sectionRow(collectRow(row));
-        row.after(copy);
-        renumber();
-      }),
-      btn('✕', '삭제', () => {
-        if ($('ed-sections').querySelectorAll('.sec-row:not(.sec-head)').length <= 1) return;
-        row.remove();
-        renumber();
-      }),
-    ),
-  );
-  return row;
+function rows() {
+  return [...$('ed-sections').querySelectorAll('.sec-row:not(.sec-head)')];
 }
 
 function collectRow(row) {
@@ -136,17 +62,137 @@ function collectRow(row) {
   };
 }
 
-function renumber() {
-  $('ed-sections').querySelectorAll('.sec-row:not(.sec-head)').forEach((r, i) => {
-    r.querySelector('.idx').textContent = i + 1;
+function collect() {
+  return normalizeSong({
+    id: current.song.id,
+    title: $('ed-title').value,
+    bpm: readNum($('ed-bpm')),
+    beatsPerBar: readNum($('ed-beats')),
+    countInBars: readNum($('ed-countin')),
+    sections: rows().map(collectRow),
+    sheets: current.sheets,
   });
-  updateTotal();
+}
+
+function refresh() {
+  const song = collect();
+  const bars = song.sections.reduce((n, s) => n + s.bars, 0);
+  $('ed-total').textContent = `${bars}마디 · ${formatDuration(songDuration(song))}`;
+  buildFormStrip($('ed-form'), song);
+  rows().forEach((r, i) => {
+    r.querySelector('.idx').textContent = i + 1;
+    r.dataset.tone = sectionTone(r.querySelector('.name').value);
+  });
+}
+
+function sectionRow(sec) {
+  const row = el('div', { className: 'sec-row' });
+  const move = (dir) => {
+    const sib = dir < 0 ? row.previousElementSibling : row.nextElementSibling;
+    if (!sib || sib.classList.contains('sec-head')) return;
+    if (dir < 0) sib.before(row);
+    else sib.after(row);
+    refresh();
+  };
+  const btn = (name, title, fn) => el('button', { type: 'button', title, onclick: fn }, icon(name));
+  const num = (cls, value, attrs, unit) => el(
+    'span',
+    { className: `unit-wrap w-${cls}` },
+    el('input', {
+      className: cls, value: value ?? '', type: 'number', ...attrs,
+    }),
+    el('span', { className: 'unit', textContent: unit }),
+  );
+  const name = el('input', {
+    className: 'name', value: sec.name, maxLength: 40, placeholder: '파트 이름', required: true,
+  });
+  name.setAttribute('list', 'section-presets');
+  row.append(
+    el('span', { className: 'idx' }),
+    name,
+    num('bars', sec.bars, {
+      min: 1, max: 512, inputMode: 'numeric', placeholder: '마디', title: '마디 수', required: true,
+    }, '마디'),
+    num('bpm', sec.bpm, {
+      min: 20, max: 400, step: 0.5, inputMode: 'decimal', placeholder: 'BPM', title: 'BPM (비우면 곡 기본값)',
+    }, 'BPM'),
+    num('beats', sec.beatsPerBar, {
+      min: 1, max: 16, inputMode: 'numeric', placeholder: '박자', title: '마디당 박 수 (비우면 곡 기본값)',
+    }, '박'),
+    el('input', {
+      className: 'cue', value: sec.cue, maxLength: 80, placeholder: '음성 문구 (선택)', title: '비우면 파트 이름을 읽어요',
+    }),
+    el(
+      'div',
+      { className: 'row-acts' },
+      btn('up', '위로', () => move(-1)),
+      btn('down', '아래로', () => move(1)),
+      btn('copy', '복제', () => {
+        row.after(sectionRow(collectRow(row)));
+        refresh();
+      }),
+      btn('close', '삭제', () => {
+        if (rows().length <= 1) return;
+        row.remove();
+        refresh();
+      }),
+    ),
+  );
+  return row;
 }
 
 function headRow() {
   const row = el('div', { className: 'sec-row sec-head' });
   for (const t of ['#', '파트', '마디', 'BPM', '박자', '음성 문구', '']) row.append(el('span', { textContent: t }));
   return row;
+}
+
+// ---------- 악보 ----------
+function renderSheets() {
+  const box = $('ed-sheets');
+  const pages = current.sheets;
+  box.replaceChildren(...pages.map((p, i) => {
+    const swap = (j) => {
+      if (j < 0 || j >= pages.length) return;
+      [pages[i], pages[j]] = [pages[j], pages[i]];
+      renderSheets();
+    };
+    const b = (name, title, fn) => el('button', { type: 'button', title, onclick: fn }, icon(name));
+    return el(
+      'div',
+      { className: 'thumb' },
+      el('img', { src: sheetUrl(p.id), alt: `${i + 1}쪽`, loading: 'lazy' }),
+      el('span', { className: 'pg', textContent: i + 1 }),
+      el(
+        'div',
+        { className: 't-acts' },
+        b('left', '앞으로', () => swap(i - 1)),
+        b('right', '뒤로', () => swap(i + 1)),
+        b('trash', '삭제', () => {
+          pages.splice(i, 1);
+          renderSheets();
+        }),
+      ),
+    );
+  }));
+}
+
+async function onSheetFiles(files) {
+  const status = $('ed-sheet-status');
+  const save = $('ed-save');
+  save.disabled = true;
+  try {
+    for (const file of files) {
+      const pages = await current.upload(file, (msg) => { status.textContent = `${file.name}: ${msg}`; });
+      current.sheets.push(...pages);
+      renderSheets();
+    }
+    status.textContent = '';
+  } catch (e) {
+    status.textContent = e.message || '업로드 실패';
+  } finally {
+    save.disabled = false;
+  }
 }
 
 let initialized = false;
@@ -158,24 +204,32 @@ function init() {
   document.body.append(dl);
 
   for (const p of SECTION_PRESETS) {
-    $('ed-presets').append(el('button', {
+    const b = el('button', {
       type: 'button',
-      className: 'btn small',
-      textContent: `+ ${p}`,
+      className: 'preset',
+      textContent: p,
       onclick: () => {
-        $('ed-sections').append(sectionRow({ name: p, bars: p === 'Intro' || p === 'Outro' ? 4 : 8, cue: '' }));
-        renumber();
+        const short = ['Intro', 'Outro', 'Tag', 'Break', 'Ending'].includes(p);
+        $('ed-sections').append(sectionRow({ name: p, bars: short ? (p === 'Tag' || p === 'Break' ? 2 : 4) : 8, cue: '' }));
+        refresh();
       },
-    }));
+    });
+    b.dataset.tone = sectionTone(p);
+    $('ed-presets').append(b);
   }
-  $('ed-sections').addEventListener('input', updateTotal);
-  for (const id of ['ed-bpm', 'ed-beats', 'ed-countin']) $(id).addEventListener('input', updateTotal);
+  $('ed-sections').addEventListener('input', refresh);
+  for (const id of ['ed-bpm', 'ed-beats', 'ed-countin']) $(id).addEventListener('input', refresh);
+
+  $('ed-sheet-file').addEventListener('change', (e) => {
+    const files = [...e.target.files];
+    e.target.value = '';
+    if (files.length) onSheetFiles(files);
+  });
 
   const dlg = $('dlg-editor');
   $('ed-save').onclick = () => {
     if (!$('editor-form').reportValidity()) return;
-    const song = collect();
-    current.onSave(song);
+    current.onSave(collect());
     dlg.close();
   };
   $('ed-delete').onclick = () => {
@@ -190,17 +244,22 @@ function init() {
   };
 }
 
-export function openEditor(song, { onSave, onDelete, isNew, toast }) {
+export function openEditor(song, {
+  onSave, onDelete, isNew, toast, upload,
+}) {
   init();
-  current = { song, onSave, onDelete, toast };
+  current = {
+    song, sheets: [...(song.sheets || [])], onSave, onDelete, toast, upload,
+  };
   $('editor-title').textContent = isNew ? '새 곡' : '곡 편집';
   $('ed-title').value = song.title;
   $('ed-bpm').value = song.bpm;
   $('ed-beats').value = song.beatsPerBar;
   $('ed-countin').value = song.countInBars;
   $('ed-delete').classList.toggle('hidden', !onDelete);
-  const box = $('ed-sections');
-  box.replaceChildren(headRow(), ...song.sections.map(sectionRow));
-  renumber();
+  $('ed-sheet-status').textContent = '';
+  $('ed-sections').replaceChildren(headRow(), ...song.sections.map(sectionRow));
+  renderSheets();
+  refresh();
   $('dlg-editor').showModal();
 }
