@@ -17,27 +17,100 @@
 <body>
   <!-- ================= 홈 ================= -->
   <section id="view-home" class="view">
-    <div class="home-card">
-      <div class="brand">
-        <img src="icon.svg" alt="" class="brand-mark">
-        <h1 class="wordmark">Brief</h1>
-      </div>
-      <p class="tagline">팀 모두가 같은 박자로.<br>실시간 메트로놈 & 송폼 브리핑</p>
+    <header class="home-top">
+      <img src="icon.svg" alt="" class="brand-mark sm">
+      <h1 class="wordmark sm">Brief</h1>
+      <span class="spacer"></span>
+      <button id="btn-home-settings" class="icon-btn" aria-label="내 기기 설정"><span data-icon="sliders"></span></button>
+    </header>
 
-      <div class="card home-form">
-        <label class="field">
-          <span class="field-label">내 이름</span>
-          <input id="home-name" class="input" maxlength="24" placeholder="예: 드럼 민수" autocomplete="nickname">
-        </label>
-        <button id="btn-create" class="btn primary block lg">새 방 만들기</button>
-        <div class="divider"><span>또는 방 코드로 입장</span></div>
-        <div class="join-row">
-          <input id="home-code" class="input code-input" maxlength="4" placeholder="ABCD" autocapitalize="characters" autocomplete="off" spellcheck="false">
-          <button id="btn-join" class="btn soft lg">입장</button>
+    <main class="home-main">
+      <!-- 홈 -->
+      <div id="tab-home" class="home-tab">
+        <button id="btn-hello" class="hello">
+          <span class="hello-k">안녕하세요</span>
+          <span class="hello-name"><b id="hello-name">이름을 정해 주세요</b><span data-icon="edit"></span></span>
+        </button>
+
+        <div class="quick-grid">
+          <button id="btn-new-room" class="quick primary">
+            <span class="quick-ic"><span data-icon="plus"></span></span>
+            <b>새 방 만들기</b><small>방장이 되어 팀을 초대해요</small>
+          </button>
+          <button id="btn-join-code" class="quick">
+            <span class="quick-ic"><span data-icon="users"></span></span>
+            <b>코드로 입장</b><small>받은 4자리 코드로 들어가요</small>
+          </button>
         </div>
-        <p id="home-error" class="error" role="alert"></p>
+
+        <section class="home-sec">
+          <div class="home-sec-head">
+            <h2>내 방</h2>
+            <button id="btn-refresh-rooms" class="btn ghost sm">새로고침</button>
+          </div>
+          <ul id="my-rooms" class="room-list"></ul>
+        </section>
+
+        <section class="home-sec">
+          <div class="home-sec-head">
+            <h2>내 셋리스트</h2>
+            <button class="btn ghost sm" data-goto="library">보관함 전체</button>
+          </div>
+          <ul id="home-setlists" class="lib-list"></ul>
+        </section>
       </div>
-    </div>
+
+      <!-- 보관함 -->
+      <div id="tab-library" class="home-tab hidden">
+        <h2 class="tab-title">보관함</h2>
+        <p class="hint">이 기기에 저장된 곡(송폼·악보)과 셋리스트예요. 방에서도 불러올 수 있어요.</p>
+        <div class="segmented inline" role="tablist">
+          <button class="seg-btn active" id="lib-tab-songs">곡 <span id="lib-count-songs" class="count"></span></button>
+          <button class="seg-btn" id="lib-tab-setlists">셋리스트 <span id="lib-count-setlists" class="count"></span></button>
+        </div>
+        <div id="lib-songs">
+          <input id="lib-search" class="input search" placeholder="곡 제목 검색" autocomplete="off">
+          <button id="btn-lib-new-song" class="btn dashed block"><span data-icon="plus"></span>새 곡 만들기</button>
+          <ul id="lib-song-list" class="lib-list"></ul>
+        </div>
+        <div id="lib-setlists" class="hidden">
+          <button id="btn-lib-new-setlist" class="btn dashed block"><span data-icon="plus"></span>새 셋리스트 만들기</button>
+          <ul id="lib-setlist-list" class="lib-list"></ul>
+        </div>
+        <div class="row wrap backup-row">
+          <button id="btn-lib-export" class="btn ghost sm"><span data-icon="download"></span>보관함 백업</button>
+          <label class="btn ghost sm file-btn"><span data-icon="upload"></span>백업 불러오기<input type="file" id="lib-import" accept="application/json,.json" hidden></label>
+        </div>
+        <p class="hint">백업 파일에는 곡과 셋리스트가 들어가요. 악보 그림은 이 기기에만 보관돼요.</p>
+      </div>
+
+      <!-- 내 정보 -->
+      <div id="tab-me" class="home-tab hidden">
+        <h2 class="tab-title">내 정보</h2>
+        <div class="card me-card">
+          <label class="field">
+            <span class="field-label">내 이름 (방에서 다른 사람에게 보여요)</span>
+            <input id="me-name" class="input" maxlength="24" placeholder="예: 드럼 민수" autocomplete="nickname">
+          </label>
+          <button id="btn-me-settings" class="btn soft block"><span data-icon="sliders"></span>소리·목소리·지연 설정</button>
+        </div>
+        <div class="card me-card tips">
+          <h3>이렇게 써요</h3>
+          <ol>
+            <li>보관함에서 곡의 송폼(파트·마디·BPM)과 악보를 만들어 두세요.</li>
+            <li>곡들을 묶어 셋리스트를 만드세요.</li>
+            <li><b>새 방 만들기</b>로 셋리스트를 골라 방을 열고 코드를 팀에 공유하세요.</li>
+            <li>방장이 시작하면 모두의 기기에서 메트로놈과 브리핑이 함께 시작돼요.</li>
+          </ol>
+        </div>
+      </div>
+    </main>
+
+    <nav class="tabbar" role="tablist">
+      <button class="tab active" data-tab="home"><span data-icon="home"></span><span>홈</span></button>
+      <button class="tab" data-tab="library"><span data-icon="bookmark"></span><span>보관함</span></button>
+      <button class="tab" data-tab="me"><span data-icon="user"></span><span>내 정보</span></button>
+    </nav>
   </section>
 
   <!-- ================= 방 ================= -->
@@ -45,7 +118,7 @@
     <header class="topbar">
       <button id="btn-leave" class="icon-btn" aria-label="나가기"><span data-icon="left"></span></button>
       <button id="btn-share" class="room-title" title="초대 링크 공유">
-        <span class="room-label">방</span>
+        <span id="room-name" class="room-label">방</span>
         <strong id="room-code">----</strong>
         <span id="conn-status" class="live-dot" aria-hidden="true"></span>
       </button>
@@ -145,6 +218,72 @@
     </div>
   </div>
 
+  <!-- ================= 홈 시트들 ================= -->
+  <dialog id="dlg-name" class="sheet">
+    <div class="sheet-head">
+      <div><h2>이름을 알려주세요</h2><p class="hint">방에서 다른 멤버에게 보여요</p></div>
+      <button class="icon-btn round soft" data-close aria-label="닫기"><span data-icon="close"></span></button>
+    </div>
+    <div class="sheet-body"><input id="name-input" class="input" maxlength="24" placeholder="예: 드럼 민수" autocomplete="nickname"></div>
+    <div class="sheet-foot"><button id="name-ok" class="btn primary block lg">확인</button></div>
+  </dialog>
+
+  <dialog id="dlg-join" class="sheet">
+    <div class="sheet-head">
+      <div><h2>코드로 입장</h2><p class="hint">방장에게 받은 4자리 코드를 입력하세요</p></div>
+      <button class="icon-btn round soft" data-close aria-label="닫기"><span data-icon="close"></span></button>
+    </div>
+    <div class="sheet-body">
+      <input id="home-code" class="input code-input" maxlength="4" placeholder="ABCD" autocapitalize="characters" autocomplete="off" spellcheck="false">
+      <p id="home-error" class="error" role="alert"></p>
+    </div>
+    <div class="sheet-foot"><button id="btn-join" class="btn primary block lg">입장</button></div>
+  </dialog>
+
+  <dialog id="dlg-new-room" class="sheet">
+    <div class="sheet-head">
+      <div><h2>새 방 만들기</h2><p class="hint">방장이 되어 셋리스트를 진행해요</p></div>
+      <button class="icon-btn round soft" data-close aria-label="닫기"><span data-icon="close"></span></button>
+    </div>
+    <div class="sheet-body">
+      <label class="field"><span class="field-label">방 이름</span><input id="new-room-title" class="input" maxlength="40" placeholder="예: 주일 2부 예배팀"></label>
+      <p class="field-label">어떤 셋리스트로 시작할까요?</p>
+      <div id="new-room-choices" class="choice-list"></div>
+    </div>
+    <div class="sheet-foot"><button id="btn-create" class="btn primary block lg">방 만들기</button></div>
+  </dialog>
+
+  <dialog id="dlg-setlist-edit" class="sheet tall">
+    <div class="sheet-head">
+      <div><h2>셋리스트</h2><p class="hint">곡 순서대로 진행돼요</p></div>
+      <button class="icon-btn round soft" data-close aria-label="닫기"><span data-icon="close"></span></button>
+    </div>
+    <div class="sheet-body">
+      <input id="sl-name" class="input title-input" maxlength="60" placeholder="셋리스트 이름 (예: 11월 첫째 주)">
+      <ol id="sl-songs" class="setlist sl-songs"></ol>
+      <div class="add-row">
+        <button id="sl-add-lib" class="btn dashed block"><span data-icon="bookmark"></span>보관함 곡 넣기</button>
+        <button id="sl-add-new" class="btn dashed block"><span data-icon="plus"></span>새 곡 만들기</button>
+      </div>
+      <div class="row wrap editor-extra">
+        <button id="sl-delete" class="btn ghost sm danger"><span data-icon="trash"></span>셋리스트 삭제</button>
+      </div>
+    </div>
+    <div class="sheet-foot">
+      <button id="sl-open-room" class="btn soft lg">이걸로 방 열기</button>
+      <button id="sl-save" class="btn primary lg grow">저장</button>
+    </div>
+  </dialog>
+
+  <dialog id="dlg-pick-songs" class="sheet">
+    <div class="sheet-head">
+      <div><h2>보관함 곡 넣기</h2><p class="hint">넣을 곡을 고르세요</p></div>
+      <button class="icon-btn round soft" data-close aria-label="닫기"><span data-icon="close"></span></button>
+    </div>
+    <div class="sheet-body"><ul id="pick-songs" class="list pick-songs"></ul></div>
+    <div class="sheet-foot"><button id="pick-songs-ok" class="btn primary block lg">넣기</button></div>
+  </dialog>
+
   <!-- ================= 시트: 곡·셋리스트 ================= -->
   <dialog id="dlg-setlist" class="sheet">
     <div class="sheet-head">
@@ -152,6 +291,7 @@
       <button class="icon-btn round soft" data-close aria-label="닫기"><span data-icon="close"></span></button>
     </div>
     <div class="sheet-body">
+      <label class="field ctl-only"><span class="field-label">방 이름</span><input id="room-title-input" class="input" maxlength="40"></label>
       <ol id="setlist" class="setlist"></ol>
       <div class="ctl-only add-row">
         <button id="btn-add-song" class="btn dashed block"><span data-icon="plus"></span>새 곡 만들기</button>
@@ -172,6 +312,7 @@
         </div>
       </div>
       <div class="ctl-only row wrap">
+        <button id="btn-save-setlist" class="btn ghost sm"><span data-icon="bookmark"></span>셋리스트 보관함에 저장</button>
         <button id="btn-export" class="btn ghost sm"><span data-icon="download"></span>내보내기</button>
         <label class="btn ghost sm file-btn"><span data-icon="upload"></span>가져오기<input type="file" id="file-import" accept="application/json,.json" hidden></label>
       </div>
@@ -323,7 +464,7 @@
     <div class="sheet-head">
       <div>
         <h2>내 곡 보관함</h2>
-        <p class="hint">이 기기에 저장된 곡이에요. 누르면 셋리스트 끝에 추가돼요.</p>
+        <p class="hint">이 기기에 저장된 곡·셋리스트예요. 곡은 셋리스트 끝에 추가되고, 셋리스트는 지금 셋리스트를 바꾸거나 뒤에 이어 붙여요.</p>
       </div>
       <button class="icon-btn round soft" data-close aria-label="닫기"><span data-icon="close"></span></button>
     </div>

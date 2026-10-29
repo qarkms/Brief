@@ -120,19 +120,35 @@ async function put(id, blob, { room, hostToken, key }) {
   }
 }
 
-/** 파일 하나(이미지 또는 PDF)를 올리고 페이지 목록 [{id,w,h}]을 돌려준다. */
-export async function uploadSheetFile(file, { onProgress, ...auth }) {
+/**
+ * 파일 하나(이미지 또는 PDF)를 페이지 이미지로 바꿔 이 기기에 보관하고, 방에 있으면 서버에도 올린다.
+ * 페이지 목록 [{id,w,h}]을 돌려준다. 홈(방 밖)에서는 기기에만 두었다가 방에서 쓸 때 자동으로 올라간다.
+ */
+export async function uploadSheetFile(file, { onProgress, ...auth } = {}) {
   const isPdf = file.type === 'application/pdf' || /\.pdf$/i.test(file.name);
   const pages = isPdf ? await pdfPages(file, onProgress) : await imagePages(file);
   const out = [];
   for (let i = 0; i < pages.length; i++) {
-    onProgress?.(`업로드 중 ${i + 1}/${pages.length}`);
     const id = newId();
-    await put(id, pages[i].blob, auth);
     await cachePut(id, pages[i].blob);
+    if (auth.room) {
+      onProgress?.(`업로드 중 ${i + 1}/${pages.length}`);
+      await put(id, pages[i].blob, auth);
+    }
     out.push({ id, w: pages[i].w, h: pages[i].h });
   }
   return out;
+}
+
+/** 이미지 칸에 악보를 넣는다. 서버에 없으면 이 기기에 보관된 파일로 보여준다. */
+export function setSheetImg(img, id) {
+  img.onerror = async () => {
+    img.onerror = null;
+    const blob = await cacheGet(id);
+    if (blob) img.src = URL.createObjectURL(blob);
+  };
+  img.src = sheetUrl(id);
+  return img;
 }
 
 /** 방장 기기: 셋리스트의 악보가 서버에 없으면 기기에 보관된 파일로 다시 올린다. */

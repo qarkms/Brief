@@ -1,14 +1,14 @@
 // 곡 편집 시트 + 이 기기에 저장되는 곡 보관함
 import {
-  makeId, normalizeSong, SECTION_PRESETS, songDuration,
+  normalizeSong, SECTION_PRESETS, songDuration,
 } from './timeline.js';
 import {
   buildFormStrip, el, icon, sectionTone,
 } from './ui.js';
-import { sheetUrl } from './sheets.js';
+import { setSheetImg } from './sheets.js';
+import { saveToLibrary } from './library.js';
 
 const $ = (id) => document.getElementById(id);
-const LIBRARY_KEY = 'brief.library';
 
 export const METERS = ['2/4', '3/4', '4/4', '5/4', '6/4', '7/4', '2/2', '3/2', '3/8', '5/8', '6/8', '7/8', '9/8', '12/8'];
 
@@ -43,33 +43,6 @@ export function countText(mode, beats) {
 export function formatDuration(sec) {
   const s = Math.round(sec);
   return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
-}
-
-export function loadLibrary() {
-  try {
-    const list = JSON.parse(localStorage.getItem(LIBRARY_KEY) || '[]');
-    return Array.isArray(list) ? list.map(normalizeSong) : [];
-  } catch {
-    return [];
-  }
-}
-
-function saveLibrary(list) {
-  try {
-    localStorage.setItem(LIBRARY_KEY, JSON.stringify(list));
-  } catch { /* 저장 공간 없음 */ }
-}
-
-/** 같은 제목의 곡이 있으면 덮어쓴다. */
-export function saveToLibrary(song) {
-  const list = loadLibrary().filter((s) => s.title !== song.title);
-  list.push({ ...song, id: makeId() });
-  list.sort((a, b) => a.title.localeCompare(b.title, 'ko'));
-  saveLibrary(list);
-}
-
-export function removeFromLibrary(id) {
-  saveLibrary(loadLibrary().filter((s) => s.id !== id));
 }
 
 // ---------- 공용: 스테퍼 (길게 누르면 계속) ----------
@@ -371,7 +344,7 @@ function renderSheets() {
     return el(
       'div',
       { className: 'thumb' },
-      el('img', { src: sheetUrl(p.id), alt: `${i + 1}쪽`, loading: 'lazy' }),
+      setSheetImg(el('img', { alt: `${i + 1}쪽`, loading: 'lazy' }), p.id),
       el('span', { className: 'pg', textContent: i + 1 }),
       el(
         'div',

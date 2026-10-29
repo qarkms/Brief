@@ -4,13 +4,17 @@ import {
   buildPlan, findBarIndex, makeId, normalizeSetlist, normalizeSong, sectionMeter, songDuration,
 } from './timeline.js';
 import {
-  bindStepper, countText, formatDuration, loadLibrary, openEditor, removeFromLibrary, setChoice, splitText,
+  bindStepper, countText, formatDuration, openEditor, setChoice, splitText,
 } from './editor.js';
+import { loadLibrary, loadSetlists, putSetlist, upsertRoom } from './library.js';
+import {
+  askName, initHome, onHomeHidden, onHomeShown, showHomeTab,
+} from './home.js';
 import {
   buildStrip, el, hydrateIcons, icon, sectionTone, songSegments, updateFormStrip,
 } from './ui.js';
 import {
-  ensureSheets, preload, sheetUrl, uploadSheetFile,
+  ensureSheets, preload, setSheetImg, uploadSheetFile,
 } from './sheets.js';
 import { VOICES } from './voice.js';
 
@@ -82,12 +86,15 @@ function showHome(error = '') {
   $('audio-gate').classList.add('hidden');
   closeScore();
   document.querySelectorAll('dialog[open]').forEach((d) => d.close());
-  $('home-error').textContent = error;
+  if (error) toast(error);
   document.body.classList.remove('ctl', 'owner', 'playing');
   releaseWakeLock();
+  showHomeTab('home');
+  onHomeShown();
 }
 
 function showRoom() {
+  onHomeHidden();
   $('view-home').classList.add('hidden');
   $('view-room').classList.remove('hidden');
   updateAudioGate();
@@ -155,7 +162,7 @@ conn.addEventListener('sync', ({ detail }) => {
 });
 
 function myName() {
-  return $('home-name').value.trim() || store.get('brief.name', '') || '멤버';
+  return store.get('brief.name', '') || '멤버';
 }
 
 function leaveRoom() {
@@ -209,6 +216,13 @@ function onState(state) {
       });
     }, 300);
   }
+
+  $('room-name').textContent = state.title;
+  if (document.activeElement !== $('room-title-input')) $('room-title-input').value = state.title;
+  // 홈의 "내 방" 목록에 기억 (방장·부방장은 닫힌 방을 다시 열 수 있게 셋리스트도)
+  upsertRoom({
+    code: state.code, title: state.title, role: me()?.role || 'member', ...(ctl ? { setlist: state.setlist } : {}),
+  });
 
   $('member-count').textContent = state.members.length;
   renderMembers();
@@ -407,35 +421,36 @@ function renderMembers() {
   }));
 }
 
-// ---------- 보관함 ----------
+// ---------- 보관함 (방 안에서 불러오기) ----------
 function renderLibrary() {
   const songs = loadLibrary();
+  const sets = loadSetlists();
   const list = $('library-list');
-  if (!songs.length) {
-    list.replaceChildren(el('li', { className: 'hint', textContent: '저장된 곡이 없어요. 곡 편집에서 "보관함에 저장"을 누르세요.' }));
+  if (!songs.length && !sets.length) {
+    list.replaceChildren(el('li', { className: 'hint', textContent: '보관함이 비어 있어요. 홈의 보관함에서 곡·셋리스트를 만들거나, 곡 편집에서 "보관함에 저장"을 누르세요.' }));
     return;
   }
-  list.replaceChildren(...songs.map((song) => el(
-    'li',
-    {},
-    el('span', {
+  const head = (t) => el('li', { className: 'list-head', textContent: t });
+  list.replaceChildren(
+    ...(sets.length ? [head('셋리스트')] : []),
+    ...sets.map((sl) => el('li', {}, el('span', {
+      className: 'name clickable',
+      onclick: () => {
+        const copy = sl.songs.map((s) => ({ ...s, id: makeId() }));
+        if (confirm(`"${sl.name}"(${sl.songs.length}곡)으로 지금 셋리스트를 바꿀까요?\n취소를 누르면 뒤에 이어 붙여요.`)) pushSetlist(copy);
+        else pushSetlist([...app.state.setlist, ...copy]);
+        $('dlg-library').close();
+      },
+    }, el('div', { textContent: sl.name }), el('div', { className: 'hint', textContent: `${sl.songs.length}곡` })))),
+    ...(songs.length ? [head('곡')] : []),
+    ...songs.map((song) => el('li', {}, el('span', {
       className: 'name clickable',
       onclick: () => {
         pushSetlist([...app.state.setlist, { ...song, id: makeId() }]);
         toast(`"${song.title}" 추가됨`);
       },
-    }, el('div', { textContent: song.title }), el('div', { className: 'hint', textContent: songMeta(song) })),
-    el('button', {
-      type: 'button',
-      className: 'btn ghost sm danger',
-      textContent: '삭제',
-      onclick: () => {
-        if (!confirm(`보관함에서 "${song.title}" 삭제?`)) return;
-        removeFromLibrary(song.id);
-        renderLibrary();
-      },
-    }),
-  )));
+    }, el('div', { textContent: song.title }), el('div', { className: 'hint', textContent: songMeta(song) })))),
+  );
 }
 
 // ---------- 현재 위치 계산 ----------
@@ -851,9 +866,9 @@ function renderScorePages(song) {
   score.page -= score.page % per;
   const shown = sheets.slice(score.page, score.page + per);
   box.classList.toggle('spread', shown.length > 1);
-  box.replaceChildren(...shown.map((p, i) => el('img', {
-    src: sheetUrl(p.id), alt: `${score.page + i + 1}쪽`, draggable: false, decoding: 'async',
-  })));
+  box.replaceChildren(...shown.map((p, i) => setSheetImg(el('img', {
+    alt: `${score.page + i + 1}쪽`, draggable: false, decoding: 'async',
+  }), p.id)));
   const last = score.page + shown.length;
   setText('score-page', `${shown.length > 1 ? `${score.page + 1}–${last}` : score.page + 1} / ${sheets.length}`);
   preload(sheets.slice(last, last + per));
@@ -1053,10 +1068,32 @@ function bindSettings() {
 
 // ---------- 이벤트 바인딩 ----------
 function enterWithAudio(type, data) {
-  const name = $('home-name').value.trim();
-  store.set('brief.name', name);
   engine.unlock().then(updateAudioGate, () => {});
-  sendWhenOpen(type, { ...data, name: name || '멤버', key: clientKey });
+  sendWhenOpen(type, { ...data, name: myName(), key: clientKey });
+}
+
+/** 이름이 없으면 먼저 묻고 이어서 진행 (탭 동작 안에서 이어지므로 소리도 켜진다) */
+function requireName(fn) {
+  if (store.get('brief.name', '')) fn();
+  else askName(fn);
+}
+
+function createRoom({
+  setlist, title, code, hostToken,
+}) {
+  requireName(() => {
+    app.code = null;
+    enterWithAudio('create', {
+      setlist: normalizeSetlist(setlist), title, code, hostToken,
+    });
+  });
+}
+
+function joinRoom(code) {
+  requireName(() => {
+    app.code = code;
+    enterWithAudio('join', { code, hostToken: hostTokenFor(code) });
+  });
 }
 
 function togglePlay() {
@@ -1066,19 +1103,6 @@ function togglePlay() {
 }
 
 function bindRoom() {
-  $('btn-create').onclick = () => {
-    enterWithAudio('create', { setlist: normalizeSetlist(store.get('brief.setlist', [])) });
-  };
-  $('btn-join').onclick = () => {
-    const code = $('home-code').value.trim().toUpperCase();
-    if (code.length !== 4) {
-      $('home-error').textContent = '4자리 방 코드를 입력하세요.';
-      return;
-    }
-    app.code = code;
-    enterWithAudio('join', { code, hostToken: hostTokenFor(code) });
-  };
-  $('home-code').addEventListener('keydown', (e) => { if (e.key === 'Enter') $('btn-join').click(); });
 
   $('btn-unlock').onclick = () => {
     engine.unlock().then(() => {
@@ -1089,9 +1113,18 @@ function bindRoom() {
   };
 
   $('btn-leave').onclick = () => {
-    if (!confirm('방에서 나갈까요?')) return;
+    if (app.state?.playback && !confirm('재생 중이에요. 홈으로 나갈까요? (방은 그대로 남아요)')) return;
     leaveRoom();
     showHome();
+  };
+  $('room-title-input').addEventListener('change', () => {
+    const title = $('room-title-input').value.trim();
+    if (title) conn.send('title', { title });
+  });
+  $('btn-save-setlist').onclick = () => {
+    const name = `${app.state.title} · ${new Date().toLocaleDateString('ko-KR')}`;
+    putSetlist({ name, songs: app.state.setlist });
+    toast(`보관함에 "${name}" 저장됨`);
   };
 
   $('btn-share').onclick = async () => {
@@ -1181,20 +1214,33 @@ function bindRoom() {
 // ---------- 시작 ----------
 function boot() {
   hydrateIcons();
-  $('home-name').value = store.get('brief.name', '');
   bindSettings();
   bindRoom();
   setupScoreInput();
   renderPills();
-  const params = new URLSearchParams(location.search);
-  const urlCode = (params.get('room') || '').toUpperCase();
-  const session = store.get('brief.session', null);
-  if (urlCode) $('home-code').value = urlCode;
+  initHome({
+    toast,
+    getName: () => store.get('brief.name', ''),
+    setName: (name) => store.set('brief.name', name),
+    hostTokenFor,
+    lastSetlist: () => normalizeSetlist(store.get('brief.setlist', [])),
+    createRoom,
+    joinRoom,
+    openSettings: () => $('dlg-settings').showModal(),
+  });
+  const urlCode = (new URLSearchParams(location.search).get('room') || '').toUpperCase();
 
-  // 새로고침했거나 초대 링크로 다시 들어온 경우 자동으로 재입장 (소리는 탭 한 번 필요)
-  if (session && (!urlCode || urlCode === session.code)) {
-    app.code = session.code;
-    conn.connect();
+  // 앱을 열면 홈부터. 초대 링크(?room=)나 방 안에서 새로고침한 경우만 그 방으로 들어간다.
+  if (/^[A-Z0-9]{4}$/.test(urlCode)) {
+    if (store.get('brief.name', '')) {
+      app.code = urlCode;
+      conn.connect(); // 연결되면 join (소리는 탭 한 번 필요)
+    } else {
+      showHome();
+      askName(() => joinRoom(urlCode));
+    }
+  } else {
+    showHome();
   }
   requestAnimationFrame(frame);
 }

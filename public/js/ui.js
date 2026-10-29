@@ -45,6 +45,9 @@ const ICONS = {
   wand: '<path d="m15 4 5 5M3 21l9-9M13.5 2.5l1 2 2 1-2 1-1 2-1-2-2-1 2-1zM19 13l.7 1.3L21 15l-1.3.7L19 17l-.7-1.3L17 15l1.3-.7z"/>',
   volume: '<path d="M11 5 6 9H2v6h4l5 4z"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07"/>',
   share: '<path d="m22 2-7 20-4-9-9-4z"/><path d="M22 2 11 13"/>',
+  home: '<path d="M3 10.5 12 3l9 7.5V20a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z"/>',
+  user: '<circle cx="12" cy="8" r="4"/><path d="M4 21v-1a6 6 0 0 1 6-6h4a6 6 0 0 1 6 6v1"/>',
+  door: '<path d="M14 3H6a1 1 0 0 0-1 1v17h14V8"/><path d="M14 3v5h5M3 21h18"/><circle cx="11" cy="13" r="1" fill="currentColor"/>',
 };
 
 export function icon(name, cls = '') {

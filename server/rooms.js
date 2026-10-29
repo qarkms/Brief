@@ -1,4 +1,6 @@
 import crypto from 'node:crypto';
+import fs from 'node:fs';
+import path from 'node:path';
 import {
   buildPlan, clamp, defaultSequence, demoSong, LIMITS, livePosition, normalizeSetlist, SUBDIVISIONS,
 } from '../public/js/timeline.js';
@@ -6,8 +8,12 @@ import {
 // 방장이 시작을 누른 뒤 실제 재생까지의 여유. 모든 기기가 메시지를 받고
 // 오디오를 예약할 시간을 확보해서 동시에 시작하도록 한다.
 export const START_LEAD_MS = 1500;
-const EMPTY_ROOM_TTL_MS = 30 * 60 * 1000;
+// 아무도 없는 방은 이 기간이 지나면 지운다 (방장은 같은 코드로 다시 열 수 있다)
+const EMPTY_ROOM_TTL_MS = 14 * 24 * 60 * 60 * 1000;
 const CODE_CHARS = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+export const ROOM_CODE = /^[ABCDEFGHJKLMNPQRSTUVWXYZ23456789]{4}$/;
+const TOKEN = /^[a-f0-9]{32}$/;
+export const cleanTitle = (v) => (typeof v === 'string' ? v.trim().slice(0, 40) : '');
 
 export const token = (bytes = 16) => crypto.randomBytes(bytes).toString('hex');
 
@@ -21,9 +27,10 @@ const CLIENT_KEY = /^[a-f0-9]{32}$/;
 export const cleanKey = (k) => (typeof k === 'string' && CLIENT_KEY.test(k) ? k : null);
 
 export class Room {
-  constructor(code, setlist, onChange = () => {}) {
+  constructor(code, setlist, onChange = () => {}, { hostToken, title } = {}) {
     this.code = code;
-    this.hostToken = token();
+    this.title = cleanTitle(title) || `방 ${code}`;
+    this.hostToken = typeof hostToken === 'string' && TOKEN.test(hostToken) ? hostToken : token();
     this.hostId = null;
     this.coHostKeys = new Set(); // 부방장 (기기 키 기준이라 재접속해도 유지)
     this.setlist = normalizeSetlist(setlist);
@@ -244,9 +251,48 @@ export class Room {
     return true;
   }
 
+  /** 디스크에 저장할 내용 (접속자·재생 상태는 저장하지 않는다) */
+  serialize() {
+    return {
+      code: this.code,
+      title: this.title,
+      hostToken: this.hostToken,
+      coHostKeys: [...this.coHostKeys],
+      setlist: this.setlist,
+      autoAdvance: this.autoAdvance,
+      gapSeconds: this.gapSeconds,
+      selectedSong: this.selectedSong,
+      lastActive: this.members.size ? Date.now() : this.emptySince || Date.now(),
+    };
+  }
+
+  static restore(data, onChange) {
+    const room = new Room(data.code, data.setlist, onChange, data);
+    for (const k of data.coHostKeys || []) if (cleanKey(k)) room.coHostKeys.add(k);
+    room.updateSettings(data);
+    room.select(data.selectedSong ?? 0, 0);
+    room.emptySince = Number(data.lastActive) || Date.now();
+    return room;
+  }
+
+  /** 홈 화면 "내 방" 카드에 보여줄 요약 */
+  summary() {
+    const pb = this.playback;
+    const song = pb ? pb.songs[pb.startSongIndex] : this.setlist[this.selectedSong];
+    return {
+      code: this.code,
+      title: this.title,
+      members: this.members.size,
+      playing: !!pb,
+      song: song ? song.title : '',
+      songs: this.setlist.length,
+    };
+  }
+
   publicState() {
     return {
       code: this.code,
+      title: this.title,
       hostId: this.hostId,
       setlist: this.setlist,
       autoAdvance: this.autoAdvance,
@@ -268,10 +314,48 @@ export class Room {
 }
 
 export class RoomManager {
-  constructor(onChange, onRemove = () => {}) {
+  constructor(onChange, onRemove = () => {}, { file = null } = {}) {
     this.rooms = new Map();
     this.onChange = onChange;
     this.onRemove = onRemove;
+    this.file = file;
+    this.saveTimer = null;
+    this.load();
+  }
+
+  /** 서버를 다시 켜도 방(셋리스트·방장·부방장)이 남도록 디스크에 저장 */
+  load() {
+    if (!this.file) return;
+    try {
+      const list = JSON.parse(fs.readFileSync(this.file, 'utf8'));
+      for (const data of list) {
+        if (!ROOM_CODE.test(data.code)) continue;
+        this.rooms.set(data.code, Room.restore(data, this.onChange));
+      }
+    } catch { /* 파일 없음 */ }
+  }
+
+  save() {
+    if (!this.file || this.saveTimer) return;
+    this.saveTimer = setTimeout(() => {
+      this.saveTimer = null;
+      this.saveNow();
+    }, 1000);
+    this.saveTimer.unref?.();
+  }
+
+  saveNow() {
+    if (!this.file) return;
+    clearTimeout(this.saveTimer);
+    this.saveTimer = null;
+    try {
+      fs.mkdirSync(path.dirname(this.file), { recursive: true });
+      const tmp = `${this.file}.tmp`;
+      fs.writeFileSync(tmp, JSON.stringify([...this.rooms.values()].map((r) => r.serialize())));
+      fs.renameSync(tmp, this.file);
+    } catch (e) {
+      console.error('방 저장 실패', e.message);
+    }
   }
 
   newCode() {
@@ -282,9 +366,15 @@ export class RoomManager {
     }
   }
 
-  create(setlist) {
-    const room = new Room(this.newCode(), setlist, this.onChange);
+  /** code·hostToken을 주면 그 코드로 방을 다시 연다 (방장이 닫힌 방을 다시 열 때) */
+  create(setlist, { code, hostToken, title } = {}) {
+    const wanted = typeof code === 'string' ? code.trim().toUpperCase() : '';
+    const useCode = ROOM_CODE.test(wanted) && !this.rooms.has(wanted) ? wanted : this.newCode();
+    const room = new Room(useCode, setlist, this.onChange, {
+      hostToken: useCode === wanted ? hostToken : null, title,
+    });
     this.rooms.set(room.code, room);
+    this.save();
     return room;
   }
 
@@ -298,6 +388,7 @@ export class RoomManager {
         room.dispose();
         this.rooms.delete(code);
         this.onRemove(code);
+        this.save();
       }
     }
   }

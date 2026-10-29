@@ -3,7 +3,7 @@ import http from 'node:http';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { WebSocketServer } from 'ws';
-import { RoomManager } from './rooms.js';
+import { cleanTitle, RoomManager } from './rooms.js';
 import { MAX_SHEET_BYTES, SheetStore } from './sheets.js';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -146,6 +146,17 @@ export function createServer({ dataDir = process.env.DATA_DIR || path.resolve('d
       uploadSheet(req, res, sheetUpload[1], url);
       return;
     }
+    // 홈 화면 "내 방" 상태: /api/rooms?codes=ABCD,EFGH
+    if (pathname === '/api/rooms' && req.method === 'GET') {
+      const codes = String(url.searchParams.get('codes') || '').split(',').slice(0, 50);
+      const out = {};
+      for (const c of codes) {
+        const room = rooms.get(c);
+        if (room) out[room.code] = room.summary();
+      }
+      json(res, 200, out);
+      return;
+    }
     const sheet = pathname.match(/^\/sheets\/([a-f0-9]{32})$/);
     if (sheet && (req.method === 'GET' || req.method === 'HEAD')) {
       serveSheet(req, res, sheet[1]);
@@ -165,7 +176,10 @@ export function createServer({ dataDir = process.env.DATA_DIR || path.resolve('d
     }
   };
 
-  const rooms = new RoomManager(broadcast, (code) => sheets.removeRoom(code));
+  const rooms = new RoomManager((room) => {
+    broadcast(room);
+    rooms.save();
+  }, (code) => sheets.removeRoom(code), { file: path.join(dataDir, 'rooms.json') });
   const sweeper = setInterval(() => rooms.sweep(), 60 * 1000);
   sweeper.unref();
 
@@ -175,6 +189,7 @@ export function createServer({ dataDir = process.env.DATA_DIR || path.resolve('d
     client.room = null;
     room.removeMember(client.id);
     broadcast(room);
+    rooms.save();
   };
 
   const enter = (client, room, msg, hostToken) => {
@@ -193,6 +208,9 @@ export function createServer({ dataDir = process.env.DATA_DIR || path.resolve('d
   const hostActions = {
     setlist(room, msg) {
       room.setSetlist(msg.setlist);
+    },
+    title(room, msg) {
+      room.title = cleanTitle(msg.title) || room.title;
     },
     settings(room, msg) {
       room.updateSettings(msg);
@@ -231,8 +249,13 @@ export function createServer({ dataDir = process.env.DATA_DIR || path.resolve('d
         send(client.ws, { type: 'pong', t0: msg.t0, ts: Date.now() });
         return;
       case 'create': {
-        // 방을 만든 사람이 방장
-        const room = rooms.create(msg.setlist);
+        // 방을 만든 사람이 방장. code+hostToken이 있으면 닫힌 방을 같은 코드로 다시 연다.
+        const existing = rooms.get(msg.code);
+        if (existing && msg.hostToken && existing.hostToken === msg.hostToken) {
+          enter(client, existing, msg, msg.hostToken);
+          return;
+        }
+        const room = rooms.create(msg.setlist, { code: msg.code, hostToken: msg.hostToken, title: msg.title });
         enter(client, room, msg, room.hostToken);
         return;
       }
@@ -261,6 +284,7 @@ export function createServer({ dataDir = process.env.DATA_DIR || path.resolve('d
         }
         action(room, msg, client);
         broadcast(room);
+        rooms.save();
       }
     }
   };
@@ -297,6 +321,7 @@ export function createServer({ dataDir = process.env.DATA_DIR || path.resolve('d
   server.on('close', () => {
     clearInterval(sweeper);
     clearInterval(heartbeat);
+    rooms.saveNow();
     for (const room of rooms.rooms.values()) room.dispose();
   });
 
