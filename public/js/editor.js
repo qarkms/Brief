@@ -20,18 +20,24 @@ export function subLabel(unit, sub) {
   if (sub === 3) return '셋잇단음표';
   return `${unit * 2}분 셋잇단`;
 }
-const SUB_MARK = {
-  1: '♩', 2: '♪', 3: '³', 4: '♬', 6: '⁶',
-};
-export const subShort = (unit, sub) => `${SUB_MARK[sub]} ${subLabel(unit, sub)}`;
 
-/** 카운트 음성 표시: 4/4면 "1 n 2 n 3 n 4 n", 3/4면 "1 n 2 n 3 n" */
+const SPLIT_SYLLABLES = {
+  1: [], 2: ['n'], 3: ['e', 'n'], 4: ['e', 'n', 'a'], 6: ['e', 'n', 'e', 'n', 'a'],
+};
+/** 클릭 쪼개기를 세는 말로: 4/4 + 8분 → "1 n 2 n 3 n 4 n", 셋잇단 → "1 e n 2 e n …" */
+export function splitText(sub, beats) {
+  const syl = SPLIT_SYLLABLES[sub] || [];
+  // 한 박에 소리가 많을수록 앞쪽 박만 보여준다
+  const show = Math.min(beats, sub <= 2 ? 6 : 2);
+  const words = [];
+  for (let i = 1; i <= show; i++) words.push(String(i), ...syl);
+  return words.join(' ') + (beats > show ? ' …' : '');
+}
+
+/** 카운트 음성 표시: 4/4면 "1 2 3 4", 6/8이면 "1 2 3 4 5 6" */
 export function countText(mode, beats) {
   if (mode === 'none') return '끔';
-  const n = Math.min(beats, 6);
-  const nums = Array.from({ length: n }, (_, i) => i + 1);
-  const more = beats > n ? ' …' : '';
-  return (mode === 'and' ? nums.map((x) => `${x} n`) : nums).join(' ') + more;
+  return splitText(1, beats);
 }
 
 export function formatDuration(sec) {
@@ -101,10 +107,13 @@ function fillMeterSelect(select, value, withDefault) {
   );
   select.value = value || '';
 }
+const SPLIT_NAME = {
+  1: '안 함', 2: '8분', 3: '셋잇단', 4: '16분', 6: '16분 셋잇단',
+};
 function fillSubSelect(select, unit, value, withDefault) {
   select.replaceChildren(
-    ...(withDefault ? [el('option', { value: '', textContent: '음표: 곡 기본' })] : []),
-    ...[1, 2, 3, 4, 6].map((s) => el('option', { value: String(s), textContent: subShort(unit, s) })),
+    ...(withDefault ? [el('option', { value: '', textContent: '곡 기본과 같게' })] : []),
+    ...[1, 2, 3, 4].map((s) => el('option', { value: String(s), textContent: `${SPLIT_NAME[s]} (${splitText(s, 2)})` })),
   );
   select.value = value ? String(value) : '';
 }
@@ -142,7 +151,7 @@ function collect() {
     bpm: Number($('ed-bpm').value),
     beatsPerBar: beats,
     beatUnit: unit,
-    subdivision: Number($('ed-sub').value),
+    subdivision: current.sub,
     countInBars: current.countIn,
     countVoice: current.countVoice,
     sections: rows().map(collectRow),
@@ -161,6 +170,10 @@ function refresh() {
   $('ed-countvoice').querySelectorAll('button').forEach((b) => {
     b.textContent = countText(b.dataset.v, beats);
   });
+  $('ed-split').querySelectorAll('button').forEach((b) => {
+    b.querySelector('b').textContent = splitText(Number(b.dataset.v), song.beatsPerBar);
+  });
+  setChoice($('ed-split'), String(current.sub));
   rows().forEach((r, i) => {
     r.querySelector('.idx').textContent = i + 1;
     const sec = collectRow(r);
@@ -168,7 +181,7 @@ function refresh() {
     const badges = [];
     if (sec.beatsPerBar) badges.push(meterOf(sec.beatsPerBar, sec.beatUnit));
     if (sec.bpm) badges.push(`${sec.bpm}`);
-    if (sec.subdivision) badges.push(SUB_MARK[sec.subdivision]);
+    if (sec.subdivision) badges.push(`쪼개기 ${SPLIT_NAME[sec.subdivision]}`);
     const box = r.querySelector('.badges');
     box.replaceChildren(...badges.map((b) => el('span', { className: 'bdg', textContent: b })));
     if (!sec.announce) box.append(el('span', { className: 'bdg off', textContent: '말 안 함' }));
@@ -255,7 +268,7 @@ function sectionRow(sec) {
         className: 'input d-bpm', type: 'number', min: 20, max: 400, inputMode: 'numeric', value: sec.bpm ?? '', placeholder: '곡 기본',
       })),
       el('label', { className: 'field' }, el('span', { className: 'field-label', textContent: '박자' }), el('span', { className: 'select-box' }, dMeter, icon('chevron'))),
-      el('label', { className: 'field' }, el('span', { className: 'field-label', textContent: '음표' }), el('span', { className: 'select-box' }, dSub, icon('chevron'))),
+      el('label', { className: 'field' }, el('span', { className: 'field-label', textContent: '클릭 쪼개기' }), el('span', { className: 'select-box' }, dSub, icon('chevron'))),
       el('label', { className: 'field' }, el('span', { className: 'field-label', textContent: '음성 문구 (비우면 파트 이름)' }), el('input', {
         className: 'input d-cue', maxLength: 80, value: sec.cue || '', placeholder: '예: Last Chorus',
       })),
@@ -402,11 +415,13 @@ function init() {
 
   $('ed-sections').addEventListener('input', refresh);
   $('ed-sections').addEventListener('change', refresh);
-  $('ed-meter').addEventListener('change', () => {
-    fillSubSelect($('ed-sub'), songMeterParts().unit, $('ed-sub').value || '1', false);
+  $('ed-meter').addEventListener('change', refresh);
+  $('ed-split').addEventListener('click', (e) => {
+    const b = e.target.closest('button');
+    if (!b) return;
+    current.sub = Number(b.dataset.v);
     refresh();
   });
-  $('ed-sub').addEventListener('change', refresh);
   $('ed-bpm').addEventListener('input', refresh);
   bindStepper(document.querySelector('[data-stepper="bpm"]'), (d) => {
     const v = Math.min(400, Math.max(20, Math.round(Number($('ed-bpm').value) || 120) + d));
@@ -468,6 +483,7 @@ export function openEditor(song, {
     upload,
     countIn: song.countInBars,
     countVoice: song.countVoice,
+    sub: song.subdivision,
     defaultTitle: isNew ? song.title : null,
   };
   $('editor-title').textContent = isNew ? '새 곡 만들기' : '곡 구조 브리핑';
@@ -475,7 +491,6 @@ export function openEditor(song, {
   $('ed-title').placeholder = isNew ? song.title : '곡 제목';
   $('ed-bpm').value = song.bpm;
   fillMeterSelect($('ed-meter'), meterOf(song.beatsPerBar, song.beatUnit), false);
-  fillSubSelect($('ed-sub'), song.beatUnit, song.subdivision, false);
   setChoice($('ed-countvoice'), song.countVoice);
   $('ed-delete').classList.toggle('hidden', !onDelete);
   $('ed-sheet-status').textContent = '';

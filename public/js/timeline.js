@@ -9,7 +9,7 @@ export const SECTION_PRESETS = [
 export const SHEET_ID = /^[a-f0-9]{32}$/;
 export const BEAT_UNITS = [2, 4, 8, 16];
 export const SUBDIVISIONS = [1, 2, 3, 4, 6];
-export const COUNT_VOICES = ['none', 'beats', 'and'];
+export const COUNT_VOICES = ['none', 'beats'];
 
 export const LIMITS = {
   bpm: [20, 400],
@@ -83,7 +83,8 @@ export function normalizeSong(s = {}) {
     beatUnit: oneOf(s.beatUnit, BEAT_UNITS, 4),
     subdivision: oneOf(s.subdivision, SUBDIVISIONS, 1),
     countInBars: Math.round(clamp(s.countInBars, LIMITS.countInBars, 1)),
-    countVoice: COUNT_VOICES.includes(s.countVoice) ? s.countVoice : 'none',
+    // 예전 'and'(1 n 2 n) 카운트는 숫자 카운트로 (쪼개기는 "클릭 쪼개기"에서)
+    countVoice: s.countVoice === 'and' ? 'beats' : COUNT_VOICES.includes(s.countVoice) ? s.countVoice : 'none',
     sections,
     sheets: normalizeSheets(s.sheets),
   };
@@ -202,17 +203,14 @@ export function buildPlan(pb) {
       prevSong = si;
       songMeta.push({ songIndex: si, start: t, end: t });
       const m0 = sectionMeter(song, sec);
-      // "1 n 2 n 3 n 4 n" 카운트는 클릭도 8분음표로 쪼개서 박을 잡기 쉽게
-      const mCount = song.countVoice === 'and' && m0.sub % 2 ? { ...m0, sub: 2 } : m0;
       const n = song.countInBars;
       for (let c = 0; c < n; c++) {
-        const bar = pushBar(bars, t, mCount, {
+        const bar = pushBar(bars, t, m0, {
           songIndex: si, sectionIndex: -1, seq: -1, bar: c + 1, barsInSection: n,
         });
         if (song.countVoice !== 'none' && c === n - 1) {
           for (let b = 0; b < m0.beats; b++) {
-            counts.push({ t: t + b * bar.beatDur, key: String(b + 1), slot: bar.beatDur / (song.countVoice === 'and' ? 2 : 1) });
-            if (song.countVoice === 'and') counts.push({ t: t + (b + 0.5) * bar.beatDur, key: 'and', slot: bar.beatDur / 2 });
+            counts.push({ t: t + b * bar.beatDur, key: String(b + 1), slot: bar.beatDur });
           }
         }
         t += bar.dur;

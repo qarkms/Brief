@@ -206,6 +206,9 @@ export function createServer({ dataDir = process.env.DATA_DIR || path.resolve('d
     stop(room) {
       room.stop();
     },
+    split(room, msg) {
+      room.setSubdivision(Number(msg.songIndex), msg.subdivision);
+    },
     live(room, msg, client) {
       const err = room.live(msg);
       if (err) send(client.ws, { type: 'error', code: err, message: LIVE_ERRORS[err] || '송폼을 바꿀 수 없어요.' });

@@ -4,7 +4,7 @@ import {
   buildPlan, findBarIndex, makeId, normalizeSetlist, normalizeSong, sectionMeter, songDuration,
 } from './timeline.js';
 import {
-  bindStepper, countText, formatDuration, loadLibrary, openEditor, removeFromLibrary, setChoice, subShort,
+  bindStepper, countText, formatDuration, loadLibrary, openEditor, removeFromLibrary, setChoice, splitText,
 } from './editor.js';
 import {
   buildStrip, el, hydrateIcons, icon, sectionTone, songSegments, updateFormStrip,
@@ -232,6 +232,7 @@ function renderPills() {
   if (song) {
     const beats = sectionMeter(song, song.sections[0]).beats;
     $('pill-count-v').textContent = song.countInBars ? `${song.countInBars}마디 · ${countText(song.countVoice, beats)}` : '없음';
+    $('pill-split-v').textContent = song.subdivision === 1 ? `끔 (${splitText(1, song.beatsPerBar)})` : splitText(song.subdivision, song.beatsPerBar);
   }
   $('pill-volume-v').textContent = `클릭 ${settings.click ? Math.round(settings.clickVolume * 100) : '끔'} · 목소리 ${settings.voice ? Math.round(settings.voiceVolume * 100) : '끔'}`;
   $('pill-voice-v').textContent = settings.voiceSet === 'device' ? '기기 음성' : VOICES[settings.voiceSet].split(' ')[0];
@@ -551,7 +552,7 @@ function renderSongCard(pos) {
   view.chipKey = null;
   const { song } = pos;
   setText('song-title', `${pos.songIndex + 1}. ${song.title}`);
-  setText('song-meta', `${songMeta(song)} · ${subShort(song.beatUnit, song.subdivision)}`);
+  setText('song-meta', songMeta(song));
   const segs = segmentsFor(pos.songIndex);
   buildStrip($('stage-form'), segs, { labels: false });
   const ctl = canControl();
@@ -1109,6 +1110,15 @@ function bindRoom() {
   $('pill-volume').onclick = () => $('dlg-settings').showModal();
   $('pill-voice').onclick = () => $('dlg-settings').showModal();
   $('pill-count').onclick = () => { if (canControl()) editSong(currentSongIndex()); };
+  // 클릭 쪼개기: 누를 때마다 안 함 → 8분 → 셋잇단 → 16분. 재생 중이면 다음 박부터 바로 바뀐다.
+  $('pill-split').onclick = () => {
+    if (!canControl()) return;
+    const song = displaySong();
+    const order = [1, 2, 3, 4];
+    const next = order[(order.indexOf(song.subdivision) + 1) % order.length];
+    conn.send('split', { songIndex: currentSongIndex(), subdivision: next });
+    toast(next === 1 ? '클릭 쪼개기 끔' : `클릭 쪼개기: ${splitText(next, song.beatsPerBar)}`);
+  };
   $('btn-setlist').onclick = () => {
     renderSetlist();
     $('dlg-setlist').showModal();

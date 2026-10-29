@@ -84,6 +84,7 @@
 
         <div class="card-divider"></div>
         <div class="pill-row">
+          <button id="pill-split" class="pill ctl-pill"><span class="pill-k">클릭 쪼개기</span> <b id="pill-split-v">-</b></button>
           <button id="pill-count" class="pill ctl-pill"><span class="pill-k">카운트</span> <b id="pill-count-v">-</b></button>
           <button id="pill-volume" class="pill"><span class="pill-k">소리</span> <b id="pill-volume-v">-</b></button>
           <button id="pill-voice" class="pill"><span class="pill-k">목소리</span> <b id="pill-voice-v">-</b></button>
@@ -196,8 +197,16 @@
           <label class="step-val col"><input id="ed-bpm" type="number" min="20" max="400" step="1" inputmode="numeric" required><small>BPM</small></label>
           <button type="button" class="step-btn" data-step="1" aria-label="BPM 늘리기"><span data-icon="plus"></span></button>
         </div>
-        <label class="select-box"><select id="ed-meter" aria-label="박자"></select><span data-icon="chevron"></span></label>
-        <label class="select-box"><select id="ed-sub" aria-label="음표"></select><span data-icon="chevron"></span></label>
+        <label class="select-box meter-box"><select id="ed-meter" aria-label="박자"></select><span data-icon="chevron"></span></label>
+        <div class="tempo-row col">
+          <span class="tempo-k">클릭 쪼개기 <small>박과 박 사이에 작은 클릭을 넣어 박을 잡기 쉽게 해요</small></span>
+          <div class="split-choice" id="ed-split">
+            <button type="button" data-v="1"><b></b><small>쪼개지 않음</small></button>
+            <button type="button" data-v="2"><b></b><small>8분음표</small></button>
+            <button type="button" data-v="3"><b></b><small>셋잇단</small></button>
+            <button type="button" data-v="4"><b></b><small>16분음표</small></button>
+          </div>
+        </div>
         <div class="tempo-row">
           <span class="tempo-k">카운트인</span>
           <div class="stepper sm" data-stepper="countin">
@@ -211,7 +220,6 @@
           <div class="chips-choice" id="ed-countvoice">
             <button type="button" data-v="none">끔</button>
             <button type="button" data-v="beats">1 2 3 4</button>
-            <button type="button" data-v="and">1 n 2 n 3 n 4 n</button>
           </div>
         </div>
       </div>

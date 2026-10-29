@@ -1,6 +1,6 @@
 import crypto from 'node:crypto';
 import {
-  buildPlan, clamp, defaultSequence, demoSong, LIMITS, livePosition, normalizeSetlist,
+  buildPlan, clamp, defaultSequence, demoSong, LIMITS, livePosition, normalizeSetlist, SUBDIVISIONS,
 } from '../public/js/timeline.js';
 
 // 방장이 시작을 누른 뒤 실제 재생까지의 여유. 모든 기기가 메시지를 받고
@@ -208,6 +208,26 @@ export class Room {
     pb.rev++;
     this.#replanned(now);
     return null;
+  }
+
+  /**
+   * 클릭 쪼개기(박 사이 클릭) 변경. 셋리스트에 저장하고, 재생 중인 곡이면 바로 반영한다.
+   * 박 위치는 그대로라 지나간 소리에는 영향이 없다.
+   */
+  setSubdivision(songIndex, sub, now = Date.now()) {
+    const value = Number(sub);
+    if (!SUBDIVISIONS.includes(value)) return false;
+    const song = this.setlist[songIndex];
+    if (!song) return false;
+    song.subdivision = value;
+    const pb = this.playback;
+    const playing = pb && pb.songs[songIndex];
+    if (playing && playing.id === song.id) {
+      playing.subdivision = value;
+      pb.rev++;
+      this.#replanned(now);
+    }
+    return true;
   }
 
   stop() {

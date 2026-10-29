@@ -91,3 +91,17 @@ test('부방장: 기기 키로 권한이 유지되고 방장만 임명할 수 �
   assert.ok(room.isCoHost('h'));
   room.dispose();
 });
+
+test('클릭 쪼개기를 재생 중에 바꾸면 셋리스트와 지금 재생에 함께 반영', () => {
+  const { room, now } = playing();
+  const before = buildPlan(room.playback);
+  assert.ok(room.setSubdivision(0, 2, now(3)));
+  assert.equal(room.setlist[0].subdivision, 2);
+  assert.equal(room.playback.songs[0].subdivision, 2);
+  assert.equal(room.playback.rev, 1);
+  const after = buildPlan(room.playback);
+  // 박 위치와 길이는 그대로
+  assert.deepEqual(after.bars.map((b) => b.t), before.bars.map((b) => b.t));
+  assert.equal(room.setSubdivision(0, 5), false);
+  room.dispose();
+});

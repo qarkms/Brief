@@ -127,22 +127,33 @@ test('박자·음표: 6/8과 셋잇단, 파트별 박자 변경', async () => {
   assert.equal(accentGroup(4, 4), 0);
 });
 
-test('카운트 음성: 1 2 3 4 / 1 n 2 n 과 첫 파트 브리핑 위치', async () => {
+test('카운트 음성 "1 2 3 4"와 첫 파트 브리핑 위치', async () => {
   const { buildPlan: bp, normalizeSong: ns } = await import('../public/js/timeline.js');
   const base = { bpm: 120, countInBars: 2, sections: [{ name: 'Intro', bars: 1 }] };
   const beats = bp({ songs: [ns({ ...base, countVoice: 'beats' })] });
   assert.deepEqual(beats.counts.map((c) => [c.t, c.key]), [[2, '1'], [2.5, '2'], [3, '3'], [3.5, '4']]);
   // 카운트하는 마디(두 번째) 대신 그 앞 마디 첫 박에 "Intro"
   assert.deepEqual(beats.briefs.map((b) => b.t), [0]);
-  const and = bp({ songs: [ns({ ...base, countVoice: 'and' })] });
-  assert.deepEqual(and.counts.map((c) => c.key), ['1', 'and', '2', 'and', '3', 'and', '4', 'and']);
-  assert.equal(and.counts[1].t, 2.25);
-  // "1 n 2 n 3 n 4 n" 모드: 카운트인 마디의 클릭도 8분음표로 쪼갠다 (곡 본문은 그대로)
-  assert.deepEqual(and.bars.map((b) => b.sub), [2, 2, 1]);
-  assert.deepEqual(beats.bars.map((b) => b.sub), [1, 1, 1]);
+  // 예전 "1 n 2 n" 카운트 설정은 숫자 카운트로 바뀐다
+  assert.equal(ns({ countVoice: 'and' }).countVoice, 'beats');
   // 카운트인 1마디 + 카운트 음성이면 첫 브리핑은 생략
   const one = bp({ songs: [ns({ ...base, countInBars: 1, countVoice: 'beats' })] });
   assert.equal(one.briefs.length, 0);
+});
+
+test('클릭 쪼개기: 곡 전체에서 박 사이에 클릭이 들어간다', async () => {
+  const { buildPlan: bp, normalizeSong: ns } = await import('../public/js/timeline.js');
+  const { buildEvents } = await import('../public/js/engine.js').catch(() => ({}));
+  const plan = bp({ songs: [ns({ bpm: 120, subdivision: 2, countInBars: 1, sections: [{ name: 'Verse', bars: 2 }] })] });
+  assert.deepEqual(plan.bars.map((b) => b.sub), [2, 2, 2]);
+  if (buildEvents) {
+    const clicks = buildEvents(plan).sounds.filter((e) => e.type === 'click');
+    assert.equal(clicks.length, 3 * 4 * 2);
+    assert.deepEqual(clicks.slice(0, 4).map((c) => [c.t, c.level]), [[0, 'bar'], [0.25, 'sub'], [0.5, 'beat'], [0.75, 'sub']]);
+  }
+  // 6/8은 그대로 여섯 박
+  const six = bp({ songs: [ns({ bpm: 120, beatsPerBar: 6, beatUnit: 8, countInBars: 0, sections: [{ name: 'V', bars: 1 }] })] });
+  assert.deepEqual([six.bars[0].beats, six.bars[0].sub], [6, 1]);
 });
 
 test('재생 순서(sequence)로 반복·생략된 송폼', async () => {
