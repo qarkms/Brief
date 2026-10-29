@@ -25,6 +25,15 @@ const SUB_MARK = {
 };
 export const subShort = (unit, sub) => `${SUB_MARK[sub]} ${subLabel(unit, sub)}`;
 
+/** 카운트 음성 표시: 4/4면 "1 n 2 n 3 n 4 n", 3/4면 "1 n 2 n 3 n" */
+export function countText(mode, beats) {
+  if (mode === 'none') return '끔';
+  const n = Math.min(beats, 6);
+  const nums = Array.from({ length: n }, (_, i) => i + 1);
+  const more = beats > n ? ' …' : '';
+  return (mode === 'and' ? nums.map((x) => `${x} n`) : nums).join(' ') + more;
+}
+
 export function formatDuration(sec) {
   const s = Math.round(sec);
   return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
@@ -147,6 +156,11 @@ function refresh() {
   $('ed-total').textContent = `· ${song.sections.length}파트 ${bars}마디 · ${formatDuration(songDuration(song))}`;
   buildFormStrip($('ed-form'), song, { labels: false });
   $('ed-countin-v').textContent = current.countIn;
+  // 카운트 음성 버튼 글자를 첫 파트 박자에 맞춘다
+  const beats = song.sections[0].beatsPerBar ?? song.beatsPerBar;
+  $('ed-countvoice').querySelectorAll('button').forEach((b) => {
+    b.textContent = countText(b.dataset.v, beats);
+  });
   rows().forEach((r, i) => {
     r.querySelector('.idx').textContent = i + 1;
     const sec = collectRow(r);

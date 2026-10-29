@@ -202,9 +202,11 @@ export function buildPlan(pb) {
       prevSong = si;
       songMeta.push({ songIndex: si, start: t, end: t });
       const m0 = sectionMeter(song, sec);
+      // "1 n 2 n 3 n 4 n" 카운트는 클릭도 8분음표로 쪼개서 박을 잡기 쉽게
+      const mCount = song.countVoice === 'and' && m0.sub % 2 ? { ...m0, sub: 2 } : m0;
       const n = song.countInBars;
       for (let c = 0; c < n; c++) {
-        const bar = pushBar(bars, t, m0, {
+        const bar = pushBar(bars, t, mCount, {
           songIndex: si, sectionIndex: -1, seq: -1, bar: c + 1, barsInSection: n,
         });
         if (song.countVoice !== 'none' && c === n - 1) {

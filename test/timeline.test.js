@@ -137,6 +137,9 @@ test('카운트 음성: 1 2 3 4 / 1 n 2 n 과 첫 파트 브리핑 위치', asyn
   const and = bp({ songs: [ns({ ...base, countVoice: 'and' })] });
   assert.deepEqual(and.counts.map((c) => c.key), ['1', 'and', '2', 'and', '3', 'and', '4', 'and']);
   assert.equal(and.counts[1].t, 2.25);
+  // "1 n 2 n 3 n 4 n" 모드: 카운트인 마디의 클릭도 8분음표로 쪼갠다 (곡 본문은 그대로)
+  assert.deepEqual(and.bars.map((b) => b.sub), [2, 2, 1]);
+  assert.deepEqual(beats.bars.map((b) => b.sub), [1, 1, 1]);
   // 카운트인 1마디 + 카운트 음성이면 첫 브리핑은 생략
   const one = bp({ songs: [ns({ ...base, countInBars: 1, countVoice: 'beats' })] });
   assert.equal(one.briefs.length, 0);

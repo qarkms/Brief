@@ -4,7 +4,7 @@ import {
   buildPlan, findBarIndex, makeId, normalizeSetlist, normalizeSong, sectionMeter, songDuration,
 } from './timeline.js';
 import {
-  bindStepper, formatDuration, loadLibrary, openEditor, removeFromLibrary, setChoice, subShort,
+  bindStepper, countText, formatDuration, loadLibrary, openEditor, removeFromLibrary, setChoice, subShort,
 } from './editor.js';
 import {
   buildStrip, el, hydrateIcons, icon, sectionTone, songSegments, updateFormStrip,
@@ -227,11 +227,11 @@ function renderOptions() {
   $('opt-gap-v').textContent = app.state.gapSeconds;
 }
 
-const countLabel = { none: '끔', beats: '1 2 3 4', and: '1 n 2 n' };
 function renderPills() {
   const song = displaySong();
   if (song) {
-    $('pill-count-v').textContent = song.countInBars ? `${song.countInBars}마디 · ${countLabel[song.countVoice]}` : '없음';
+    const beats = sectionMeter(song, song.sections[0]).beats;
+    $('pill-count-v').textContent = song.countInBars ? `${song.countInBars}마디 · ${countText(song.countVoice, beats)}` : '없음';
   }
   $('pill-volume-v').textContent = `클릭 ${settings.click ? Math.round(settings.clickVolume * 100) : '끔'} · 목소리 ${settings.voice ? Math.round(settings.voiceVolume * 100) : '끔'}`;
   $('pill-voice-v').textContent = settings.voiceSet === 'device' ? '기기 음성' : VOICES[settings.voiceSet].split(' ')[0];
@@ -672,16 +672,56 @@ function liveSend(op, extra = {}, msg = '') {
   if (msg) toast(msg);
 }
 
-function renderLive(pos, container) {
+/** 실시간 송폼 화면들이 함께 쓰는 현재 상황 */
+function liveContext(pos) {
   const pb = app.state.playback;
-  const plan = app.plan;
-  // 지금 곡의 파트 중 지금부터 남은 것
   const songIndex = pos.songIndex;
   const song = pb.songs[songIndex];
   const time = pos.time ?? 0;
-  const items = plan.items.filter((it) => it.songIndex === songIndex && it.end > time);
+  // 지금 곡의 파트 중 지금부터 남은 것
+  const items = app.plan.items.filter((it) => it.songIndex === songIndex && it.end > time);
   const curSeq = pos.mode === 'play' ? pos.seq : -1;
   const nextItem = items.find((it) => it.seq !== curSeq);
+  // 이 곡의 파트 종류(이름 기준 첫 번째) → "다음에 넣기"
+  const seen = new Set();
+  const kinds = [];
+  song.sections.forEach((sec, k) => {
+    if (seen.has(sec.name)) return;
+    seen.add(sec.name);
+    kinds.push({ sec, k });
+  });
+  return {
+    song,
+    time,
+    items,
+    curSeq,
+    nextItem,
+    kinds,
+    curName: curSeq >= 0 ? song.sections[pos.sectionIndex].name : null,
+    nextName: nextItem ? song.sections[nextItem.sectionIndex].name : null,
+  };
+}
+
+const liveOps = {
+  repeat: (c) => liveSend('repeat', {}, `${c.curName} 한 번 더`),
+  skip: (c) => liveSend('skipNext', {}, `${c.nextName} 건너뜀`),
+  end: () => liveSend('endSong', {}, '이 파트가 끝나면 곡을 마쳐요'),
+  insert: (sec, k) => liveSend('insert', { sectionIndex: k }, `다음에 ${sec.name} 추가`),
+};
+
+function insertChip(sec, k) {
+  const c = el('button', { type: 'button', className: 'chip' }, el('span', { className: 'n', textContent: `+ ${sec.name}` }), el('span', { className: 'b', textContent: sec.bars }));
+  c.dataset.tone = sectionTone(sec.name);
+  c.onclick = () => liveOps.insert(sec, k);
+  return c;
+}
+
+function renderLive(pos, container) {
+  const ctx = liveContext(pos);
+  const {
+    song, time, items, curSeq, nextItem, curName,
+  } = ctx;
+  const nextName2 = ctx.nextName;
 
   const queue = el('div', { className: 'live-queue' });
   items.slice(0, 7).forEach((it) => {
@@ -713,23 +753,7 @@ function renderLive(pos, container) {
   const action = (name, label, fn, disabled) => el('button', {
     type: 'button', className: 'btn soft', onclick: fn, disabled,
   }, icon(name), label);
-  const curName = curSeq >= 0 ? song.sections[pos.sectionIndex].name : null;
-  const nextName2 = nextItem ? song.sections[nextItem.sectionIndex].name : null;
-
-  // 이 곡의 파트 종류(이름 기준 첫 번째) → "다음에 넣기"
-  const seen = new Set();
-  const kinds = [];
-  song.sections.forEach((sec, k) => {
-    if (seen.has(sec.name)) return;
-    seen.add(sec.name);
-    kinds.push({ sec, k });
-  });
-  const insert = el('div', { className: 'live-insert' }, ...kinds.map(({ sec, k }) => {
-    const c = el('button', { type: 'button', className: 'chip' }, el('span', { className: 'n', textContent: `+ ${sec.name}` }), el('span', { className: 'b', textContent: sec.bars }));
-    c.dataset.tone = sectionTone(sec.name);
-    c.onclick = () => liveSend('insert', { sectionIndex: k }, `다음에 ${sec.name} 추가`);
-    return c;
-  }));
+  const insert = el('div', { className: 'live-insert' }, ...ctx.kinds.map(({ sec, k }) => insertChip(sec, k)));
 
   container.replaceChildren(
     el('div', { className: 'live-head' }, el('h2', { textContent: '실시간 송폼' }), el('span', { className: 'live-badge', textContent: 'LIVE' })),
@@ -738,18 +762,38 @@ function renderLive(pos, container) {
     el(
       'div',
       { className: 'live-actions' },
-      action('repeat', curName ? `${curName}\n한 번 더` : '지금 파트\n한 번 더', () => liveSend('repeat', {}, `${curName} 한 번 더`), !curName),
-      action('skip', nextName2 ? `${nextName2}\n건너뛰기` : '다음 파트\n건너뛰기', () => liveSend('skipNext', {}, `${nextName2} 건너뜀`), !nextName2),
-      action('flag', '이 파트 후\n곡 끝내기', () => liveSend('endSong', {}, '이 파트가 끝나면 곡을 마쳐요'), !nextItem),
+      action('repeat', curName ? `${curName}\n한 번 더` : '지금 파트\n한 번 더', () => liveOps.repeat(ctx), !curName),
+      action('skip', nextName2 ? `${nextName2}\n건너뛰기` : '다음 파트\n건너뛰기', () => liveOps.skip(ctx), !nextName2),
+      action('flag', '이 파트 후\n곡 끝내기', liveOps.end, !nextItem),
     ),
     el('div', { className: 'live-insert-title', textContent: '다음 파트로 넣기' }),
     insert,
   );
 }
 
+/** 악보 위 한 줄 도구: 누르면 바로 송폼이 바뀐다 */
+function renderScoreTools(pos, container) {
+  const ctx = liveContext(pos);
+  const tool = (name, label, fn, disabled, cls = '') => el('button', {
+    type: 'button', className: `tool ${cls}`.trim(), onclick: fn, disabled,
+  }, icon(name), el('span', { textContent: label }));
+  container.replaceChildren(
+    tool('repeat', ctx.curName ? `${ctx.curName} 한 번 더` : '한 번 더', () => liveOps.repeat(ctx), !ctx.curName),
+    tool('skip', ctx.nextName ? `${ctx.nextName} 건너뛰기` : '건너뛰기', () => liveOps.skip(ctx), !ctx.nextName),
+    tool('flag', '이 파트 후 끝', liveOps.end, !ctx.nextItem),
+    el('span', { className: 'tool-sep' }),
+    ...ctx.kinds.map(({ sec, k }) => insertChip(sec, k)),
+    tool('wand', '송폼 전체', () => {
+      view.liveKey = null;
+      $('dlg-live').showModal();
+    }, false, 'more'),
+  );
+}
+
 function renderLivePanels(pos) {
   const show = !!app.state.playback && canControl() && pos.mode !== 'end';
   $('live-card').classList.toggle('hidden', !show);
+  $('score-tools').classList.toggle('hidden', !show);
   const sheetOpen = $('dlg-live').open;
   if (!show) {
     if (sheetOpen) $('dlg-live').close();
@@ -761,6 +805,7 @@ function renderLivePanels(pos) {
   if (view.liveKey === key) return;
   view.liveKey = key;
   renderLive(pos, $('live-panel'));
+  if (score.open) renderScoreTools(pos, $('score-tools'));
   if (sheetOpen) renderLive(pos, $('live-panel-sheet'));
 }
 
@@ -772,6 +817,7 @@ const score = {
 function openScore() {
   score.open = true;
   score.key = null;
+  view.liveKey = null;
   $('view-score').classList.remove('hidden');
   $('tab-score').classList.add('active');
   $('tab-brief').classList.remove('active');
@@ -888,10 +934,6 @@ function setupScoreInput() {
   $('tab-score').onclick = openScore;
   $('tab-brief').onclick = closeScore;
   $('btn-score-close').onclick = closeScore;
-  $('score-live').onclick = () => {
-    view.liveKey = null;
-    $('dlg-live').showModal();
-  };
   $('score-play').onclick = togglePlay;
   // 블루투스 페이지 넘김 페달은 보통 화살표/PageDown 키를 보낸다
   document.addEventListener('keydown', (e) => {
