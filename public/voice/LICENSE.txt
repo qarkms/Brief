@@ -1,0 +1,2 @@
+These voice clips were generated with Kokoro-82M (https://github.com/hexgrad/kokoro),
+released under the Apache License 2.0, using the voices af_heart (female) and am_michael (male).

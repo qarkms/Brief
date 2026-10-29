@@ -3,132 +3,129 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-  <meta name="theme-color" content="#0b0b0e">
+  <meta name="theme-color" content="#fff9eb">
   <meta name="apple-mobile-web-app-capable" content="yes">
-  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
   <title>Brief — 밴드 메트로놈 & 브리핑</title>
   <link rel="manifest" href="manifest.webmanifest">
   <link rel="icon" href="icon.svg" type="image/svg+xml">
   <link rel="apple-touch-icon" href="icon.svg">
-  <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin>
-  <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css">
+  <link rel="preload" href="fonts/NanumSquareRoundB.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="preload" href="fonts/NanumSquareRoundEB.woff2" as="font" type="font/woff2" crossorigin>
   <link rel="stylesheet" href="css/style.css">
 </head>
 <body>
-  <!-- 홈: 방 만들기 / 입장 -->
+  <!-- ================= 홈 ================= -->
   <section id="view-home" class="view">
     <div class="home-card">
       <div class="brand">
         <img src="icon.svg" alt="" class="brand-mark">
         <h1 class="wordmark">Brief</h1>
       </div>
-      <p class="tagline">합주실의 모든 기기가 같은 박자로.<br>실시간 메트로놈 & 파트 브리핑</p>
+      <p class="tagline">팀 모두가 같은 박자로.<br>실시간 메트로놈 & 송폼 브리핑</p>
 
-      <label class="field">
-        <span class="field-label">내 이름</span>
-        <input id="home-name" maxlength="24" placeholder="예: 드럼 민수" autocomplete="nickname">
-      </label>
-      <button id="btn-create" class="btn primary block lg">새 방 만들기</button>
-
-      <div class="divider"><span>방 코드로 입장</span></div>
-      <div class="join-row">
-        <input id="home-code" class="code-input" maxlength="4" placeholder="ABCD" autocapitalize="characters" autocomplete="off" spellcheck="false">
-        <button id="btn-join" class="btn lg">입장</button>
+      <div class="card home-form">
+        <label class="field">
+          <span class="field-label">내 이름</span>
+          <input id="home-name" class="input" maxlength="24" placeholder="예: 드럼 민수" autocomplete="nickname">
+        </label>
+        <button id="btn-create" class="btn primary block lg">새 방 만들기</button>
+        <div class="divider"><span>또는 방 코드로 입장</span></div>
+        <div class="join-row">
+          <input id="home-code" class="input code-input" maxlength="4" placeholder="ABCD" autocapitalize="characters" autocomplete="off" spellcheck="false">
+          <button id="btn-join" class="btn soft lg">입장</button>
+        </div>
+        <p id="home-error" class="error" role="alert"></p>
       </div>
-      <p id="home-error" class="error" role="alert"></p>
     </div>
   </section>
 
-  <!-- 방 -->
+  <!-- ================= 방 ================= -->
   <section id="view-room" class="view hidden">
     <header class="topbar">
-      <button id="btn-leave" class="icon-btn" title="나가기" aria-label="나가기"><span data-icon="back"></span></button>
-      <button id="btn-share" class="room-chip" title="초대 링크 공유">
-        <span id="conn-status" class="live-dot" aria-hidden="true"></span>
+      <button id="btn-leave" class="icon-btn" aria-label="나가기"><span data-icon="left"></span></button>
+      <button id="btn-share" class="room-title" title="초대 링크 공유">
+        <span class="room-label">방</span>
         <strong id="room-code">----</strong>
-        <span data-icon="link" class="muted"></span>
+        <span id="conn-status" class="live-dot" aria-hidden="true"></span>
       </button>
       <span class="spacer"></span>
-      <button id="btn-score" class="btn ghost sm"><span data-icon="score"></span><span class="hide-xs">악보</span></button>
       <button id="btn-members" class="icon-btn with-count" aria-label="참가자"><span data-icon="users"></span><span id="member-count">0</span></button>
       <button id="btn-settings" class="icon-btn" aria-label="내 기기 설정"><span data-icon="sliders"></span></button>
     </header>
 
-    <main class="room-grid">
-      <div class="stage-col">
-        <div id="stage" class="stage">
-          <div class="stage-top">
-            <span id="stage-song-title" class="stage-song">-</span>
-            <span id="stage-bpm" class="tag-pill">120 BPM</span>
+    <div class="segmented" role="tablist">
+      <button class="seg-btn active" id="tab-brief" role="tab">브리핑</button>
+      <button class="seg-btn" id="tab-score" role="tab">악보</button>
+    </div>
+
+    <main class="room-main">
+      <article class="card song-card">
+        <div class="song-head">
+          <div class="song-head-text">
+            <h2 id="song-title" class="song-title">-</h2>
+            <p id="song-meta" class="song-meta">-</p>
           </div>
+          <button id="btn-setlist" class="icon-btn lg" aria-label="곡·셋리스트"><span data-icon="list"></span></button>
+          <button id="btn-edit-song" class="icon-btn lg ctl-only" aria-label="곡 편집"><span data-icon="edit"></span></button>
+        </div>
+
+        <div id="stage" class="stage">
           <div id="stage-status" class="stage-status">대기 중</div>
           <div id="stage-section" class="stage-section">-</div>
           <div id="stage-bar" class="stage-bar">&nbsp;</div>
           <div id="beat-dots" class="beats"></div>
           <div id="stage-next" class="stage-next">&nbsp;</div>
-          <div id="stage-form" class="form-strip slim"></div>
         </div>
 
-        <div class="transport host-only">
-          <button id="btn-prev" class="round-btn" aria-label="이전 곡"><span data-icon="prev"></span></button>
-          <button id="btn-play" class="play-btn" aria-label="시작"><span data-icon="play" class="ic-play"></span><span data-icon="stop" class="ic-stop"></span><span id="play-label">시작</span></button>
-          <button id="btn-next" class="round-btn" aria-label="다음 곡"><span data-icon="next"></span></button>
-        </div>
-        <p class="guest-only hint center">방장이 시작하면 모두의 기기에서 동시에 재생됩니다</p>
+        <div id="stage-form" class="form-strip slim"></div>
+        <div id="structure" class="chip-row"></div>
+        <p class="hint ctl-only" id="structure-hint">파트를 누르면 거기부터 시작해요</p>
 
-        <div class="panel">
-          <div class="panel-head">
-            <h2>송폼</h2>
-            <span class="hint host-only">파트를 탭하면 그 파트부터 시작</span>
-          </div>
-          <div id="structure" class="structure"></div>
+        <div class="card-divider"></div>
+        <div class="pill-row">
+          <button id="pill-count" class="pill ctl-pill"><span class="pill-k">카운트</span> <b id="pill-count-v">-</b></button>
+          <button id="pill-volume" class="pill"><span class="pill-k">소리</span> <b id="pill-volume-v">-</b></button>
+          <button id="pill-voice" class="pill"><span class="pill-k">목소리</span> <b id="pill-voice-v">-</b></button>
         </div>
-      </div>
+      </article>
 
-      <div class="panel setlist-panel">
-        <div class="panel-head">
-          <h2>셋리스트</h2>
-          <div class="host-only head-actions">
-            <button id="btn-library" class="btn ghost sm"><span data-icon="bookmark"></span>보관함</button>
-            <button id="btn-add-song" class="btn primary sm"><span data-icon="plus"></span>곡 추가</button>
-          </div>
-        </div>
-        <ol id="setlist" class="setlist"></ol>
-        <div class="setlist-options">
-          <label class="toggle">
-            <input type="checkbox" id="opt-auto"><span class="toggle-ui"></span>
-            <span>곡이 끝나면 자동으로 다음 곡</span>
-          </label>
-          <label class="inline">
-            <span>곡 사이 간격</span>
-            <span class="num-unit"><input type="number" id="opt-gap" min="0" max="120" step="0.5" inputmode="decimal"><span>초</span></span>
-          </label>
-        </div>
-        <div class="host-only row wrap foot-actions">
-          <button id="btn-export" class="btn ghost sm"><span data-icon="download"></span>내보내기</button>
-          <label class="btn ghost sm file-btn"><span data-icon="upload"></span>가져오기<input type="file" id="file-import" accept="application/json,.json" hidden></label>
-        </div>
-      </div>
+      <!-- 실시간 송폼 (방장·부방장, 재생 중) -->
+      <section id="live-card" class="card live-card hidden">
+        <div id="live-panel"></div>
+      </section>
+
+      <p class="guest-only hint center">방장이 시작하면 모두의 기기에서 함께 시작돼요</p>
     </main>
+
+    <div class="cta-bar ctl-only">
+      <button id="btn-prev" class="round-btn" aria-label="이전 곡"><span data-icon="prev"></span></button>
+      <button id="btn-play" class="btn primary cta"><span data-icon="playOutline" class="ic-play"></span><span data-icon="stop" class="ic-stop"></span><span id="play-label">브리핑 시작</span></button>
+      <button id="btn-next" class="round-btn" aria-label="다음 곡"><span data-icon="next"></span></button>
+    </div>
   </section>
 
-  <!-- 악보 보기 -->
+  <!-- ================= 악보 보기 ================= -->
   <section id="view-score" class="score-view hidden" aria-label="악보 보기">
     <div class="score-bar">
+      <button id="btn-score-close" class="icon-btn sm" aria-label="악보 닫기"><span data-icon="left"></span></button>
       <div class="score-meta">
         <span id="score-title" class="score-title">-</span>
         <span id="score-pos" class="score-pos"></span>
         <span id="score-beats" class="beats mini"></span>
         <span id="score-brief" class="score-brief"></span>
       </div>
+      <div class="score-actions ctl-only">
+        <button id="score-live" class="btn soft sm"><span data-icon="wand"></span>송폼</button>
+        <button id="score-play" class="btn primary sm"><span data-icon="play" class="ic-play"></span><span data-icon="stop" class="ic-stop"></span></button>
+      </div>
       <div id="score-form" class="form-strip compact"></div>
-      <button id="btn-score-close" class="icon-btn" aria-label="악보 닫기"><span data-icon="close"></span></button>
     </div>
     <div id="score-pages" class="score-pages"></div>
     <div id="score-empty" class="score-empty hidden">
       <span data-icon="score" class="empty-ic"></span>
       <p>이 곡에는 아직 악보가 없어요.</p>
-      <p class="hint host-only">곡 편집에서 이미지나 PDF 악보를 올릴 수 있어요.</p>
+      <p class="hint ctl-only">곡 편집에서 이미지나 PDF 악보를 올릴 수 있어요.</p>
     </div>
     <div class="score-nav">
       <button id="score-prev" class="round-btn sm" aria-label="이전 페이지"><span data-icon="left"></span></button>
@@ -137,113 +134,192 @@
     </div>
   </section>
 
-  <!-- 오디오 활성화 (모바일 브라우저는 탭이 있어야 소리를 낼 수 있음) -->
+  <!-- 오디오 활성화 -->
   <div id="audio-gate" class="overlay hidden">
-    <button id="btn-unlock" class="btn primary lg"><span data-icon="speaker"></span>탭해서 소리 켜기</button>
-    <p class="hint">모바일 브라우저 정책상 한 번 탭해야 소리가 납니다</p>
+    <div class="card gate-card">
+      <span data-icon="volume" class="gate-ic"></span>
+      <p class="gate-title">소리를 켜 주세요</p>
+      <p class="hint">모바일 브라우저는 한 번 탭해야 소리가 나요</p>
+      <button id="btn-unlock" class="btn primary block lg">소리 켜기</button>
+    </div>
   </div>
 
-  <!-- 곡 편집 -->
-  <dialog id="dlg-editor" class="dialog wide">
-    <form method="dialog" id="editor-form">
-      <div class="dialog-head">
-        <h2 id="editor-title">곡 편집</h2>
-        <button value="cancel" formnovalidate class="icon-btn" aria-label="닫기"><span data-icon="close"></span></button>
+  <!-- ================= 시트: 곡·셋리스트 ================= -->
+  <dialog id="dlg-setlist" class="sheet">
+    <div class="sheet-head">
+      <h2>곡·셋리스트</h2>
+      <button class="icon-btn round soft" data-close aria-label="닫기"><span data-icon="close"></span></button>
+    </div>
+    <div class="sheet-body">
+      <ol id="setlist" class="setlist"></ol>
+      <div class="ctl-only add-row">
+        <button id="btn-add-song" class="btn dashed block"><span data-icon="plus"></span>새 곡 만들기</button>
+        <button id="btn-library" class="btn dashed block"><span data-icon="bookmark"></span>보관함에서 추가</button>
       </div>
-      <div class="song-fields">
-        <label class="field title-field"><span class="field-label">곡 제목</span><input id="ed-title" maxlength="80" required></label>
-        <label class="field"><span class="field-label">BPM</span><input id="ed-bpm" type="number" min="20" max="400" step="0.5" inputmode="decimal" required></label>
-        <label class="field"><span class="field-label">박자 (마디당 박)</span><input id="ed-beats" type="number" min="1" max="16" inputmode="numeric" required></label>
-        <label class="field"><span class="field-label">카운트인 마디</span><input id="ed-countin" type="number" min="0" max="8" inputmode="numeric" required></label>
-        <div class="field"><span class="field-label">총 길이</span><output id="ed-total" class="total">-</output></div>
+      <div class="options-box">
+        <label class="toggle">
+          <span>곡이 끝나면 자동으로 다음 곡</span>
+          <input type="checkbox" id="opt-auto"><span class="toggle-ui"></span>
+        </label>
+        <div class="option-line">
+          <span>곡 사이 간격</span>
+          <div class="stepper sm" data-stepper="gap">
+            <button type="button" class="step-btn" data-step="-1" aria-label="줄이기"><span data-icon="minus"></span></button>
+            <span class="step-val"><b id="opt-gap-v">4</b>초</span>
+            <button type="button" class="step-btn" data-step="1" aria-label="늘리기"><span data-icon="plus"></span></button>
+          </div>
+        </div>
       </div>
-      <div id="ed-form" class="form-strip"></div>
+      <div class="ctl-only row wrap">
+        <button id="btn-export" class="btn ghost sm"><span data-icon="download"></span>내보내기</button>
+        <label class="btn ghost sm file-btn"><span data-icon="upload"></span>가져오기<input type="file" id="file-import" accept="application/json,.json" hidden></label>
+      </div>
+    </div>
+    <div class="sheet-foot"><button class="btn primary block lg" data-close>완료</button></div>
+  </dialog>
 
-      <h3>파트</h3>
-      <p class="hint">각 파트가 시작하기 한 마디 전에 파트 이름(또는 음성 문구)을 읽어줍니다. BPM·박자는 비워두면 곡 기본값을 씁니다.</p>
-      <div class="presets" id="ed-presets"></div>
+  <!-- ================= 시트: 곡 편집 ================= -->
+  <dialog id="dlg-editor" class="sheet tall">
+    <div class="sheet-head">
+      <div>
+        <h2 id="editor-title">곡 구조 브리핑</h2>
+        <p class="hint">파트가 시작하기 한 마디 전에 목소리로 알려드려요</p>
+      </div>
+      <button class="icon-btn round soft" data-close aria-label="닫기"><span data-icon="close"></span></button>
+    </div>
+    <form class="sheet-body" id="editor-form" onsubmit="return false">
+      <input id="ed-title" class="input title-input" maxlength="80" placeholder="곡 제목" required>
+
+      <div class="tempo-box">
+        <div class="stepper big" data-stepper="bpm">
+          <button type="button" class="step-btn" data-step="-1" aria-label="BPM 줄이기"><span data-icon="minus"></span></button>
+          <label class="step-val col"><input id="ed-bpm" type="number" min="20" max="400" step="1" inputmode="numeric" required><small>BPM</small></label>
+          <button type="button" class="step-btn" data-step="1" aria-label="BPM 늘리기"><span data-icon="plus"></span></button>
+        </div>
+        <label class="select-box"><select id="ed-meter" aria-label="박자"></select><span data-icon="chevron"></span></label>
+        <label class="select-box"><select id="ed-sub" aria-label="음표"></select><span data-icon="chevron"></span></label>
+        <div class="tempo-row">
+          <span class="tempo-k">카운트인</span>
+          <div class="stepper sm" data-stepper="countin">
+            <button type="button" class="step-btn" data-step="-1" aria-label="줄이기"><span data-icon="minus"></span></button>
+            <span class="step-val"><b id="ed-countin-v">1</b>마디</span>
+            <button type="button" class="step-btn" data-step="1" aria-label="늘리기"><span data-icon="plus"></span></button>
+          </div>
+        </div>
+        <div class="tempo-row">
+          <span class="tempo-k">카운트 음성</span>
+          <div class="chips-choice" id="ed-countvoice">
+            <button type="button" data-v="none">끔</button>
+            <button type="button" data-v="beats">1 2 3 4</button>
+            <button type="button" data-v="and">1 n 2 n</button>
+          </div>
+        </div>
+      </div>
+
+      <div id="ed-form" class="form-strip"></div>
+      <p class="hint">손잡이를 잡고 끌면 순서가 바뀌어요. 파트를 누르면 BPM·박자·음표·음성 문구를 바꿀 수 있어요. <b id="ed-total"></b></p>
+
       <div id="ed-sections" class="sections"></div>
+      <div class="presets" id="ed-presets"></div>
 
       <h3>악보</h3>
-      <p class="hint">이미지(JPG·PNG)나 PDF를 올리면 모든 멤버가 악보 보기에서 볼 수 있어요.</p>
+      <p class="hint">이미지(JPG·PNG)나 PDF를 올리면 모든 멤버가 악보 탭에서 볼 수 있어요.</p>
       <div id="ed-sheets" class="sheet-thumbs"></div>
-      <div class="row">
-        <label class="btn ghost sm file-btn"><span data-icon="upload"></span>악보 올리기<input type="file" id="ed-sheet-file" accept="image/*,application/pdf,.pdf" multiple hidden></label>
+      <div class="row wrap">
+        <label class="btn soft sm file-btn"><span data-icon="upload"></span>악보 올리기<input type="file" id="ed-sheet-file" accept="image/*,application/pdf,.pdf" multiple hidden></label>
         <span id="ed-sheet-status" class="hint"></span>
       </div>
 
-      <div class="dialog-actions">
+      <div class="row wrap editor-extra">
         <button type="button" id="ed-save-library" class="btn ghost sm"><span data-icon="bookmark"></span>보관함에 저장</button>
-        <span class="spacer"></span>
-        <button type="button" id="ed-delete" class="btn danger-ghost">삭제</button>
-        <button type="button" id="ed-save" class="btn primary">저장</button>
+        <button type="button" id="ed-delete" class="btn ghost sm danger"><span data-icon="trash"></span>셋리스트에서 삭제</button>
       </div>
     </form>
+    <div class="sheet-foot"><button type="button" id="ed-save" class="btn primary block lg">완료</button></div>
   </dialog>
 
-  <!-- 내 기기 설정 -->
-  <dialog id="dlg-settings" class="dialog">
-    <form method="dialog">
-      <div class="dialog-head">
+  <!-- 파트 고르기 (편집기 + 끼워넣기) -->
+  <dialog id="dlg-pick" class="sheet">
+    <div class="sheet-head">
+      <h2>파트 넣기</h2>
+      <button class="icon-btn round soft" data-close aria-label="닫기"><span data-icon="close"></span></button>
+    </div>
+    <div class="sheet-body"><div id="pick-list" class="pick-grid"></div></div>
+  </dialog>
+
+  <!-- 실시간 송폼 시트 (악보 보기에서) -->
+  <dialog id="dlg-live" class="sheet">
+    <div class="sheet-head">
+      <h2>실시간 송폼</h2>
+      <button class="icon-btn round soft" data-close aria-label="닫기"><span data-icon="close"></span></button>
+    </div>
+    <div class="sheet-body"><div id="live-panel-sheet"></div></div>
+  </dialog>
+
+  <!-- ================= 시트: 내 기기 설정 ================= -->
+  <dialog id="dlg-settings" class="sheet">
+    <div class="sheet-head">
+      <div>
         <h2>내 기기 설정</h2>
-        <button class="icon-btn" aria-label="닫기"><span data-icon="close"></span></button>
+        <p class="hint">이 기기에만 적용돼요</p>
       </div>
-      <p class="hint">이 설정은 이 기기에만 적용됩니다.</p>
-
-      <div class="settings-group">
-        <label class="toggle"><input type="checkbox" id="set-click"><span class="toggle-ui"></span><span>메트로놈 클릭</span></label>
-        <label class="field"><span class="field-label">클릭 볼륨</span><input type="range" id="set-click-vol" min="0" max="1" step="0.05"></label>
+      <button class="icon-btn round soft" data-close aria-label="닫기"><span data-icon="close"></span></button>
+    </div>
+    <div class="sheet-body">
+      <div class="options-box">
+        <label class="toggle"><span>메트로놈 클릭</span><input type="checkbox" id="set-click"><span class="toggle-ui"></span></label>
+        <label class="range-line"><span>클릭 크기</span><input type="range" id="set-click-vol" min="0" max="1" step="0.05"></label>
+        <label class="range-line"><span>잘게 쪼갠 박 크기</span><input type="range" id="set-sub-vol" min="0" max="1" step="0.05"></label>
       </div>
-
-      <div class="settings-group">
-        <label class="toggle"><input type="checkbox" id="set-voice"><span class="toggle-ui"></span><span>음성 브리핑</span></label>
-        <label class="field"><span class="field-label">목소리</span><select id="set-voice-uri"></select></label>
-        <div class="grid-3">
-          <label class="field"><span class="field-label">음성 볼륨</span><input type="range" id="set-voice-vol" min="0" max="1" step="0.05"></label>
-          <label class="field"><span class="field-label">속도</span><input type="range" id="set-voice-rate" min="0.6" max="2" step="0.05"></label>
-          <label class="field"><span class="field-label">음높이</span><input type="range" id="set-voice-pitch" min="0" max="2" step="0.05"></label>
+      <div class="options-box">
+        <label class="toggle"><span>음성 브리핑·카운트</span><input type="checkbox" id="set-voice"><span class="toggle-ui"></span></label>
+        <div class="option-line">
+          <span>목소리</span>
+          <div class="chips-choice" id="set-voice-set">
+            <button type="button" data-v="female">여성</button>
+            <button type="button" data-v="male">남성</button>
+            <button type="button" data-v="device">기기 음성</button>
+          </div>
         </div>
-        <button type="button" id="btn-test-voice" class="btn ghost sm"><span data-icon="mic"></span>음성 테스트</button>
+        <label class="range-line"><span>목소리 크기</span><input type="range" id="set-voice-vol" min="0" max="1" step="0.05"></label>
+        <p class="hint">여성·남성 목소리는 박에 정확히 맞춰 나와요. 직접 쓴 한글 문구처럼 녹음에 없는 말은 기기 음성으로 읽어요.</p>
+        <label class="field device-only"><span class="field-label">기기 음성 종류</span><select id="set-voice-uri" class="input"></select></label>
+        <label class="range-line"><span>기기 음성 타이밍 <output id="set-lead-out">0</output>ms</span><input type="range" id="set-lead" min="-300" max="500" step="10"></label>
+        <p class="hint">기기 음성 지연은 자동으로 재서 맞춰요(현재 <b id="speech-auto">-</b>ms). 그래도 늦으면 값을 올리세요.</p>
+        <button type="button" id="btn-test-voice" class="btn soft sm"><span data-icon="mic"></span>목소리 들어보기</button>
       </div>
-
-      <div class="settings-group">
-        <label class="field">
-          <span class="field-label">지연 보정 <output id="set-latency-out">0</output> ms</span>
-          <input type="range" id="set-latency" min="-300" max="500" step="5">
-          <small class="hint">블루투스 이어폰처럼 소리가 늦게 나오면 값을 올리세요 (더 일찍 재생).</small>
-        </label>
-        <label class="field">
-          <span class="field-label">음성 미리 시작 <output id="set-lead-out">0</output> ms</span>
-          <input type="range" id="set-lead" min="0" max="600" step="10">
-          <small class="hint">기기의 음성 엔진이 늦게 말하기 시작하면 값을 올리세요.</small>
-        </label>
-        <label class="toggle"><input type="checkbox" id="set-wake"><span class="toggle-ui"></span><span>화면 꺼짐 방지</span></label>
+      <div class="options-box">
+        <label class="range-line"><span>소리 지연 보정 <output id="set-latency-out">0</output>ms</span><input type="range" id="set-latency" min="-300" max="500" step="5"></label>
+        <p class="hint">블루투스 이어폰처럼 소리가 늦게 나오면 값을 올리세요.</p>
+        <label class="toggle"><span>화면 꺼짐 방지</span><input type="checkbox" id="set-wake"><span class="toggle-ui"></span></label>
       </div>
-      <p id="sync-info" class="hint"></p>
-    </form>
+      <p id="sync-info" class="hint center"></p>
+    </div>
+    <div class="sheet-foot"><button class="btn primary block lg" data-close>완료</button></div>
   </dialog>
 
-  <!-- 참가자 -->
-  <dialog id="dlg-members" class="dialog">
-    <form method="dialog">
-      <div class="dialog-head">
+  <!-- ================= 시트: 참가자 ================= -->
+  <dialog id="dlg-members" class="sheet">
+    <div class="sheet-head">
+      <div>
         <h2>참가자</h2>
-        <button class="icon-btn" aria-label="닫기"><span data-icon="close"></span></button>
+        <p class="hint owner-only">부방장은 방장처럼 곡 편집·시작·송폼 변경을 할 수 있어요</p>
       </div>
-      <ul id="member-list" class="list"></ul>
-    </form>
+      <button class="icon-btn round soft" data-close aria-label="닫기"><span data-icon="close"></span></button>
+    </div>
+    <div class="sheet-body"><ul id="member-list" class="list"></ul></div>
   </dialog>
 
-  <!-- 곡 보관함 -->
-  <dialog id="dlg-library" class="dialog">
-    <form method="dialog">
-      <div class="dialog-head">
+  <!-- ================= 시트: 보관함 ================= -->
+  <dialog id="dlg-library" class="sheet">
+    <div class="sheet-head">
+      <div>
         <h2>내 곡 보관함</h2>
-        <button class="icon-btn" aria-label="닫기"><span data-icon="close"></span></button>
+        <p class="hint">이 기기에 저장된 곡이에요. 누르면 셋리스트 끝에 추가돼요.</p>
       </div>
-      <p class="hint">이 기기에 저장된 곡입니다. 탭하면 셋리스트 끝에 추가돼요.</p>
-      <ul id="library-list" class="list"></ul>
-    </form>
+      <button class="icon-btn round soft" data-close aria-label="닫기"><span data-icon="close"></span></button>
+    </div>
+    <div class="sheet-body"><ul id="library-list" class="list"></ul></div>
   </dialog>
 
   <div id="toast" class="toast" role="status"></div>

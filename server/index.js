@@ -23,6 +23,9 @@ const MIME = {
   '.png': 'image/png',
   '.json': 'application/json',
   '.webmanifest': 'application/manifest+json',
+  '.woff2': 'font/woff2',
+  '.wav': 'audio/wav',
+  '.txt': 'text/plain; charset=utf-8',
 };
 
 function serveFile(res, file) {
@@ -59,6 +62,14 @@ function serveStatic(req, res, pathname) {
   serveFile(res, file);
 }
 
+const LIVE_ERRORS = {
+  TOO_LATE: '이미 지나간 파트는 바꿀 수 없어요.',
+  STALE: '송폼이 방금 바뀌었어요. 다시 시도해 주세요.',
+  NOTHING_NEXT: '이 곡에 남은 다음 파트가 없어요.',
+  NOT_IN_SECTION: '파트가 시작된 뒤에 반복할 수 있어요.',
+  NOT_PLAYING: '재생 중이 아니에요.',
+};
+
 const cleanName = (v) => (typeof v === 'string' ? v.trim().slice(0, 24) : '') || '멤버';
 
 const json = (res, status, body) => {
@@ -90,7 +101,8 @@ export function createServer({ dataDir = process.env.DATA_DIR || path.resolve('d
   async function uploadSheet(req, res, id, url) {
     const room = rooms.get(url.searchParams.get('room'));
     if (!room) return json(res, 404, { error: 'ROOM_NOT_FOUND' });
-    if (req.headers['x-host-token'] !== room.hostToken) return json(res, 403, { error: 'NOT_HOST' });
+    const allowed = req.headers['x-host-token'] === room.hostToken || room.canControlKey(req.headers['x-client-key']);
+    if (!allowed) return json(res, 403, { error: 'NOT_HOST' });
     let buf;
     try {
       buf = await readBody(req, MAX_SHEET_BYTES);
@@ -165,10 +177,10 @@ export function createServer({ dataDir = process.env.DATA_DIR || path.resolve('d
     broadcast(room);
   };
 
-  const enter = (client, room, name, hostToken) => {
+  const enter = (client, room, msg, hostToken) => {
     leave(client);
     client.room = room;
-    const isHost = room.addMember(client, cleanName(name), hostToken);
+    const isHost = room.addMember(client, cleanName(msg.name), hostToken, msg.key);
     send(client.ws, {
       type: 'joined',
       you: client.id,
@@ -194,7 +206,14 @@ export function createServer({ dataDir = process.env.DATA_DIR || path.resolve('d
     stop(room) {
       room.stop();
     },
-    transfer(room, msg, client) {
+    live(room, msg, client) {
+      const err = room.live(msg);
+      if (err) send(client.ws, { type: 'error', code: err, message: LIVE_ERRORS[err] || '송폼을 바꿀 수 없어요.' });
+    },
+    owner_cohost(room, msg) {
+      room.setCoHost(msg.to, !!msg.on);
+    },
+    owner_transfer(room, msg, client) {
       const newToken = room.transferHost(msg.to);
       if (!newToken) return;
       const target = room.members.get(msg.to).client;
@@ -211,7 +230,7 @@ export function createServer({ dataDir = process.env.DATA_DIR || path.resolve('d
       case 'create': {
         // 방을 만든 사람이 방장
         const room = rooms.create(msg.setlist);
-        enter(client, room, msg.name, room.hostToken);
+        enter(client, room, msg, room.hostToken);
         return;
       }
       case 'join': {
@@ -220,18 +239,21 @@ export function createServer({ dataDir = process.env.DATA_DIR || path.resolve('d
           send(client.ws, { type: 'error', code: 'ROOM_NOT_FOUND', message: '방을 찾을 수 없어요.' });
           return;
         }
-        enter(client, room, msg.name, msg.hostToken);
+        enter(client, room, msg, msg.hostToken);
         return;
       }
       case 'leave':
         leave(client);
         return;
       default: {
-        const action = hostActions[msg.type];
+        // owner_* 는 방장만, 나머지는 방장·부방장
+        if (msg.type.startsWith('owner_')) return;
+        const ownerOnly = ['cohost', 'transfer'].includes(msg.type);
+        const action = hostActions[ownerOnly ? `owner_${msg.type}` : msg.type];
         const room = client.room;
         if (!action || !room) return;
-        if (!room.isHost(client.id)) {
-          send(client.ws, { type: 'error', code: 'NOT_HOST', message: '방장만 할 수 있어요.' });
+        if (ownerOnly ? !room.isHost(client.id) : !room.canControl(client.id)) {
+          send(client.ws, { type: 'error', code: 'NOT_HOST', message: ownerOnly ? '방장만 할 수 있어요.' : '방장·부방장만 할 수 있어요.' });
           return;
         }
         action(room, msg, client);

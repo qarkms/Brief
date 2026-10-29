@@ -99,16 +99,20 @@ async function pdfPages(file, onProgress) {
 }
 
 // ---------- 업로드 ----------
-async function put(id, blob, room, hostToken) {
+async function put(id, blob, { room, hostToken, key }) {
   const res = await fetch(`/api/sheets/${id}?room=${encodeURIComponent(room)}`, {
     method: 'PUT',
-    headers: { 'content-type': blob.type || 'image/jpeg', 'x-host-token': hostToken },
+    headers: {
+      'content-type': blob.type || 'image/jpeg',
+      'x-host-token': hostToken || '',
+      'x-client-key': key || '',
+    },
     body: blob,
   });
   if (!res.ok) {
     const { error } = await res.json().catch(() => ({}));
     const msg = {
-      NOT_HOST: '방장만 악보를 올릴 수 있어요',
+      NOT_HOST: '방장·부방장만 악보를 올릴 수 있어요',
       TOO_LARGE: '파일이 너무 커요',
       ROOM_FULL: '이 방의 악보 저장 공간이 가득 찼어요',
     }[error];
@@ -117,14 +121,14 @@ async function put(id, blob, room, hostToken) {
 }
 
 /** 파일 하나(이미지 또는 PDF)를 올리고 페이지 목록 [{id,w,h}]을 돌려준다. */
-export async function uploadSheetFile(file, { room, hostToken, onProgress }) {
+export async function uploadSheetFile(file, { onProgress, ...auth }) {
   const isPdf = file.type === 'application/pdf' || /\.pdf$/i.test(file.name);
   const pages = isPdf ? await pdfPages(file, onProgress) : await imagePages(file);
   const out = [];
   for (let i = 0; i < pages.length; i++) {
     onProgress?.(`업로드 중 ${i + 1}/${pages.length}`);
     const id = newId();
-    await put(id, pages[i].blob, room, hostToken);
+    await put(id, pages[i].blob, auth);
     await cachePut(id, pages[i].blob);
     out.push({ id, w: pages[i].w, h: pages[i].h });
   }
@@ -133,7 +137,8 @@ export async function uploadSheetFile(file, { room, hostToken, onProgress }) {
 
 /** 방장 기기: 셋리스트의 악보가 서버에 없으면 기기에 보관된 파일로 다시 올린다. */
 const verified = new Set();
-export async function ensureSheets(setlist, { room, hostToken }) {
+export async function ensureSheets(setlist, auth) {
+  const { room } = auth;
   const key = (id) => `${room}:${id}`;
   const ids = setlist.flatMap((s) => s.sheets.map((p) => p.id)).filter((id) => !verified.has(key(id)));
   let restored = 0;
@@ -144,7 +149,7 @@ export async function ensureSheets(setlist, { room, hostToken }) {
       if (head.ok) continue;
       const blob = await cacheGet(id);
       if (blob) {
-        await put(id, blob, room, hostToken);
+        await put(id, blob, auth);
         restored++;
       }
     } catch {

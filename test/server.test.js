@@ -154,3 +154,26 @@ test('악보: 방장만 올릴 수 있고 누구나 받을 수 있다', async ()
   assert.deepEqual(s.state.setlist[0].sheets, [{ id, w: 100, h: 140 }]);
   host.close();
 });
+
+test('부방장은 시작할 수 있지만 다른 사람을 임명할 수는 없다', async () => {
+  const host = client();
+  await host.open;
+  host.send('create', { name: 'H', key: 'c'.repeat(32) });
+  const { code } = await host.next(isType('joined'));
+  const co = client();
+  await co.open;
+  co.send('join', { code, name: 'C', key: 'd'.repeat(32) });
+  const { you } = await co.next(isType('joined'));
+  host.send('cohost', { to: you, on: true });
+  await co.next((m) => m.type === 'state' && m.state.members.find((x) => x.id === you)?.role === 'cohost');
+  co.send('play', {});
+  await co.next((m) => m.type === 'state' && m.state.playback);
+  co.send('cohost', { to: you, on: false });
+  assert.equal((await co.next(isType('error'))).code, 'NOT_HOST');
+  co.send('owner_cohost', { to: you, on: false });
+  co.send('live', { op: 'endSong' });
+  const live = await co.next((m) => m.type === 'state' && m.state.playback?.rev === 1);
+  assert.equal(live.state.members.find((x) => x.id === you).role, 'cohost');
+  host.close();
+  co.close();
+});

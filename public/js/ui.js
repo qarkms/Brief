@@ -1,4 +1,5 @@
 // 공용 UI 도우미: 아이콘, 파트별 색상, 송폼 스트립
+import { sectionMeter } from './timeline.js';
 
 export const el = (tag, props = {}, ...children) => {
   const node = Object.assign(document.createElement(tag), props);
@@ -31,6 +32,19 @@ const ICONS = {
   speaker: '<path d="M11 5 6 9H2v6h4l5 4z"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07M19.07 4.93a10 10 0 0 1 0 14.14"/>',
   mic: '<path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2M12 19v3"/>',
   crown: '<path d="m2 6 4 11h12l4-11-6 5-4-7-4 7z"/><path d="M6 21h12"/>',
+  list: '<path d="M3 6h11M3 12h11M3 18h7"/><circle cx="18" cy="17" r="2.5"/><path d="M20.5 17V6l-3 1"/>',
+  minus: '<path d="M5 12h14"/>',
+  grip: '<circle cx="9" cy="6" r="1.2" fill="currentColor"/><circle cx="15" cy="6" r="1.2" fill="currentColor"/><circle cx="9" cy="12" r="1.2" fill="currentColor"/><circle cx="15" cy="12" r="1.2" fill="currentColor"/><circle cx="9" cy="18" r="1.2" fill="currentColor"/><circle cx="15" cy="18" r="1.2" fill="currentColor"/>',
+  playOutline: '<path d="M7 4.5v15a1 1 0 0 0 1.5.86l12.5-7.5a1 1 0 0 0 0-1.72L8.5 3.64A1 1 0 0 0 7 4.5z"/>',
+  repeat: '<path d="m17 2 4 4-4 4"/><path d="M3 11v-1a4 4 0 0 1 4-4h14M7 22l-4-4 4-4"/><path d="M21 13v1a4 4 0 0 1-4 4H3"/>',
+  skip: '<path d="m5 4 10 8-10 8z"/><path d="M19 5v14"/>',
+  flag: '<path d="M4 22V4a1 1 0 0 1 .4-.8A6 6 0 0 1 8 2c3 0 5 2 8 2a6 6 0 0 0 3.6-1.2.5.5 0 0 1 .4.5V15a1 1 0 0 1-.4.8A6 6 0 0 1 16 17c-3 0-5-2-8-2a6 6 0 0 0-4 1.5"/>',
+  chevron: '<path d="m6 9 6 6 6-6"/>',
+  note: '<path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/>',
+  userCheck: '<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="m16 11 2 2 4-4"/>',
+  wand: '<path d="m15 4 5 5M3 21l9-9M13.5 2.5l1 2 2 1-2 1-1 2-1-2-2-1 2-1zM19 13l.7 1.3L21 15l-1.3.7L19 17l-.7-1.3L17 15l1.3-.7z"/>',
+  volume: '<path d="M11 5 6 9H2v6h4l5 4z"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07"/>',
+  share: '<path d="m22 2-7 20-4-9-9-4z"/><path d="M22 2 11 13"/>',
 };
 
 export function icon(name, cls = '') {
@@ -50,11 +64,18 @@ export function hydrateIcons(root = document) {
 
 /** 파트 이름 → 색상 그룹 */
 export function sectionTone(name) {
-  const n = String(name).toLowerCase().replace(/[^a-z가-힣]/g, '');
+  const raw = String(name).trim().toLowerCase();
+  if (/^\d+\s*\/\s*\d+$/.test(raw)) return 'meter';
+  const abbr = raw.replace(/[\s\d._-]/g, '');
+  const short = {
+    v: 'verse', c: 'chorus', ch: 'chorus', pc: 'pre', p: 'pre', b: 'bridge', i: 'intro', o: 'outro', t: 'tag',
+  }[abbr];
+  if (short) return short;
+  const n = raw.replace(/[^a-z가-힣]/g, '');
   if (n.startsWith('pre') || n.includes('프리')) return 'pre';
   if (n.startsWith('post')) return 'post';
   if (n.includes('chorus') || n.includes('후렴') || n.includes('코러스') || n.includes('hook')) return 'chorus';
-  if (n.includes('verse') || n.includes('벌스') || /^\d*절/.test(n)) return 'verse';
+  if (n.includes('verse') || n.includes('벌스') || n.includes('버스') || /^\d*절/.test(n)) return 'verse';
   if (n.includes('intro') || n.includes('인트로')) return 'intro';
   if (n.includes('bridge') || n.includes('브릿지')) return 'bridge';
   if (n.includes('solo') || n.includes('솔로')) return 'solo';
@@ -68,33 +89,55 @@ export function sectionTone(name) {
 
 /**
  * 송폼 스트립: 파트 길이에 비례한 색 막대.
- * labels=true면 파트 이름·마디 수를 표시한다.
+ * segs: [{ key, name, bars, weight }]  (key로 현재/다음 파트를 표시)
  */
-export function buildFormStrip(container, song, { labels = true } = {}) {
-  container.replaceChildren(...song.sections.map((sec, k) => {
-    const beats = sec.beatsPerBar ?? song.beatsPerBar;
-    const bpm = sec.bpm ?? song.bpm;
+export function buildStrip(container, segs, { labels = true } = {}) {
+  container.replaceChildren(...segs.map((sg) => {
     const seg = el('div', { className: 'seg' });
-    seg.dataset.tone = sectionTone(sec.name);
-    seg.dataset.k = k;
-    seg.style.flexGrow = String(sec.bars * beats * (60 / bpm));
+    seg.dataset.tone = sectionTone(sg.name);
+    seg.dataset.key = sg.key;
+    seg.style.flexGrow = String(sg.weight);
     seg.append(el('i', { className: 'seg-fill' }));
     if (labels) {
-      seg.append(el('span', { className: 'seg-name', textContent: sec.name }), el('span', { className: 'seg-bars', textContent: sec.bars }));
+      seg.append(el('span', { className: 'seg-name', textContent: sg.name }), el('span', { className: 'seg-bars', textContent: sg.bars }));
     }
     return seg;
   }));
-  container.dataset.song = song.id;
 }
 
-/** current: 진행 중 파트, progress: 그 파트 안의 진행률(0~1), next: 브리핑 중인 다음 파트 */
+/** 곡의 기본 송폼 → 스트립 조각 */
+export function songSegments(song) {
+  return song.sections.map((sec, k) => {
+    const m = sectionMeter(song, sec);
+    return {
+      key: k, name: sec.name, bars: sec.bars, weight: sec.bars * m.beats * (60 / m.bpm),
+    };
+  });
+}
+
+export function buildFormStrip(container, song, opts) {
+  buildStrip(container, songSegments(song), opts);
+}
+
+/** current: 진행 중 조각 key, progress: 그 안의 진행률(0~1), next: 브리핑 중인 다음 조각 key */
 export function updateFormStrip(container, current, progress, next) {
+  let passed = current !== null && current !== undefined && current !== -1;
+  let seen = false;
   for (const seg of container.children) {
-    const k = Number(seg.dataset.k);
-    seg.classList.toggle('done', current >= 0 && k < current);
-    seg.classList.toggle('current', k === current);
-    seg.classList.toggle('next', k === next);
-    const fill = k < current ? 1 : k === current ? progress : 0;
-    seg.style.setProperty('--p', fill.toFixed(4));
+    const key = seg.dataset.key;
+    const isCur = passed && key === String(current);
+    if (isCur) seen = true;
+    const done = passed && !seen;
+    seg.classList.toggle('done', done);
+    seg.classList.toggle('current', isCur);
+    seg.classList.toggle('next', next !== null && next !== undefined && key === String(next));
+    seg.style.setProperty('--p', (done ? 1 : isCur ? progress : 0).toFixed(4));
+  }
+  if (passed && !seen) {
+    // 현재 조각이 없으면(카운트인 등) 아무것도 지나지 않은 것으로
+    for (const seg of container.children) {
+      seg.classList.remove('done');
+      seg.style.setProperty('--p', '0');
+    }
   }
 }

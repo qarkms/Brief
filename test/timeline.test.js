@@ -105,3 +105,50 @@ test('Tag 파트 프리셋', async () => {
   const { SECTION_PRESETS } = await import('../public/js/timeline.js');
   assert.ok(SECTION_PRESETS.includes('Tag'));
 });
+
+test('박자·음표: 6/8과 셋잇단, 파트별 박자 변경', async () => {
+  const { buildPlan: bp, normalizeSong: ns, accentGroup } = await import('../public/js/timeline.js');
+  const s = ns({
+    bpm: 120, beatsPerBar: 4, beatUnit: 4, subdivision: 3, countInBars: 0,
+    sections: [
+      { name: 'Verse', bars: 1 },
+      { name: '2/4', bars: 1, beatsPerBar: 2, beatUnit: 4, announce: false },
+      { name: 'Chorus', bars: 1, beatsPerBar: 7, beatUnit: 8 },
+    ],
+  });
+  const plan = bp({ songs: [s] });
+  assert.deepEqual(plan.bars.map((b) => [b.beats, b.unit, b.sub]), [[4, 4, 3], [2, 4, 3], [7, 8, 3]]);
+  // 4/4 → 7/8: 8분음표 길이가 그대로 유지되도록 BPM 환산 (♩=120 → ♪=240)
+  assert.equal(plan.bars[2].bpm, 240);
+  assert.equal(plan.duration, 2 + 1 + 7 * 0.25);
+  // 브리핑 끈 파트는 말하지 않고, 다음 파트 브리핑은 그 파트(2/4 마디) 첫 박에
+  assert.deepEqual(plan.briefs.map((b) => [b.t, b.text]), [[0, 'Verse'], [2, 'Chorus']]);
+  assert.equal(accentGroup(6, 8), 3);
+  assert.equal(accentGroup(4, 4), 0);
+});
+
+test('카운트 음성: 1 2 3 4 / 1 n 2 n 과 첫 파트 브리핑 위치', async () => {
+  const { buildPlan: bp, normalizeSong: ns } = await import('../public/js/timeline.js');
+  const base = { bpm: 120, countInBars: 2, sections: [{ name: 'Intro', bars: 1 }] };
+  const beats = bp({ songs: [ns({ ...base, countVoice: 'beats' })] });
+  assert.deepEqual(beats.counts.map((c) => [c.t, c.key]), [[2, '1'], [2.5, '2'], [3, '3'], [3.5, '4']]);
+  // 카운트하는 마디(두 번째) 대신 그 앞 마디 첫 박에 "Intro"
+  assert.deepEqual(beats.briefs.map((b) => b.t), [0]);
+  const and = bp({ songs: [ns({ ...base, countVoice: 'and' })] });
+  assert.deepEqual(and.counts.map((c) => c.key), ['1', 'and', '2', 'and', '3', 'and', '4', 'and']);
+  assert.equal(and.counts[1].t, 2.25);
+  // 카운트인 1마디 + 카운트 음성이면 첫 브리핑은 생략
+  const one = bp({ songs: [ns({ ...base, countInBars: 1, countVoice: 'beats' })] });
+  assert.equal(one.briefs.length, 0);
+});
+
+test('재생 순서(sequence)로 반복·생략된 송폼', async () => {
+  const { buildPlan: bp, livePosition } = await import('../public/js/timeline.js');
+  const s = song();
+  const plan = bp({ songs: [s], sequence: [[0, 0], [0, 2], [0, 2], [0, 1]] });
+  assert.deepEqual(plan.items.map((it) => [it.sectionIndex, it.t]), [[0, 2], [2, 6], [2, 10], [1, 14]]);
+  assert.deepEqual(plan.briefs.map((b) => b.text), ['Intro', 'Big chorus', 'Big chorus', 'Verse']);
+  const pos = livePosition(plan, 7);
+  assert.equal(pos.cur, 1);
+  assert.equal(pos.firstEditable, 2);
+});
