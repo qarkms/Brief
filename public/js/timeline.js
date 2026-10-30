@@ -186,7 +186,8 @@ export function buildPlan(pb) {
   let t = 0;
   let prevSong = null;
 
-  sequence.forEach(([si, k], seq) => {
+  // sequence 항목: [곡, 파트, 추가 마디(실시간 "+1 마디")]
+  sequence.forEach(([si, k, extra = 0], seq) => {
     const song = songs[si];
     const sec = song && song.sections[k];
     if (!sec) return;
@@ -236,14 +237,15 @@ export function buildPlan(pb) {
     }
 
     const start = t;
-    for (let b = 0; b < sec.bars; b++) {
+    const count = Math.max(1, sec.bars + (Number(extra) || 0));
+    for (let b = 0; b < count; b++) {
       const bar = pushBar(bars, t, m, {
-        songIndex: si, sectionIndex: k, seq, bar: b + 1, barsInSection: sec.bars,
+        songIndex: si, sectionIndex: k, seq, bar: b + 1, barsInSection: count,
       });
       t += bar.dur;
     }
     items.push({
-      seq, songIndex: si, sectionIndex: k, t: start, end: t,
+      seq, songIndex: si, sectionIndex: k, t: start, end: t, bars: count, extra: count - sec.bars,
     });
   });
   if (songMeta.length) songMeta[songMeta.length - 1].end = t;

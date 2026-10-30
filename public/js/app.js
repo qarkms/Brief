@@ -1,5 +1,5 @@
 import { Connection } from './net.js';
-import { DEFAULT_SETTINGS, Engine } from './engine.js';
+import { CLICK_SOUNDS, DEFAULT_SETTINGS, Engine } from './engine.js';
 import {
   buildPlan, findBarIndex, makeId, normalizeSetlist, normalizeSong, sectionMeter, songDuration,
 } from './timeline.js';
@@ -248,7 +248,8 @@ function renderPills() {
     $('pill-count-v').textContent = song.countInBars ? `${song.countInBars}마디 · ${countText(song.countVoice, beats)}` : '없음';
     $('pill-split-v').textContent = song.subdivision === 1 ? `끔 (${splitText(1, song.beatsPerBar)})` : splitText(song.subdivision, song.beatsPerBar);
   }
-  $('pill-volume-v').textContent = `클릭 ${settings.click ? Math.round(settings.clickVolume * 100) : '끔'} · 목소리 ${settings.voice ? Math.round(settings.voiceVolume * 100) : '끔'}`;
+  $('pill-volume-v').textContent = settings.click ? `${CLICK_SOUNDS[settings.clickSound]} ${Math.round(settings.clickVolume * 100)}` : '클릭 끔';
+  $('pill-bt-v').textContent = settings.btOn ? `켬 ${settings.btMs}ms` : '끔';
   $('pill-voice-v').textContent = settings.voiceSet === 'device' ? '기기 음성' : VOICES[settings.voiceSet].split(' ')[0];
 }
 
@@ -521,7 +522,7 @@ function segmentsFor(songIndex) {
     return app.plan.items.filter((it) => it.songIndex === songIndex).map((it) => {
       const sec = song.sections[it.sectionIndex];
       return {
-        key: it.seq, name: sec.name, bars: sec.bars, weight: it.end - it.t, silent: !sec.announce, sectionIndex: it.sectionIndex,
+        key: it.seq, name: sec.name, bars: it.bars, weight: it.end - it.t, silent: !sec.announce, sectionIndex: it.sectionIndex,
       };
     });
   }
@@ -723,7 +724,9 @@ const liveOps = {
   skip: (c) => liveSend('skipNext', {}, `${c.nextName} 건너뜀`),
   end: () => liveSend('endSong', {}, '이 파트가 끝나면 곡을 마쳐요'),
   insert: (sec, k) => liveSend('insert', { sectionIndex: k }, `다음에 ${sec.name} 추가`),
+  addBar: (c) => liveSend('addBar', {}, `${c.curName || '파트'} 한 마디 늘림`),
 };
+const barsText = (it, sec) => (it.extra ? `${sec.bars}+${it.extra}마디` : `${sec.bars}마디`);
 
 function insertChip(sec, k) {
   const c = el('button', { type: 'button', className: 'chip' }, el('span', { className: 'n', textContent: `+ ${sec.name}` }), el('span', { className: 'b', textContent: sec.bars }));
@@ -748,7 +751,7 @@ function renderLive(pos, container) {
       'div',
       { className: `q-item${isNow ? ' now' : ''}${isNext ? ' next' : ''}` },
       el('span', { className: 'q-name', textContent: sec.name }),
-      el('span', { className: 'q-bars', textContent: `${sec.bars}마디` }),
+      el('span', { className: 'q-bars', textContent: barsText(it, sec) }),
     );
     row.dataset.tone = sectionTone(sec.name);
     if (isNow) row.append(el('span', { className: 'q-tag', textContent: '지금' }));
@@ -780,6 +783,7 @@ function renderLive(pos, container) {
       { className: 'live-actions' },
       action('repeat', curName ? `${curName}\n한 번 더` : '지금 파트\n한 번 더', () => liveOps.repeat(ctx), !curName),
       action('skip', nextName2 ? `${nextName2}\n건너뛰기` : '다음 파트\n건너뛰기', () => liveOps.skip(ctx), !nextName2),
+      action('plus', curName ? `${curName}\n+1 마디` : '지금 파트\n+1 마디', () => liveOps.addBar(ctx), !curName),
       action('flag', '이 파트 후\n곡 끝내기', liveOps.end, !nextItem),
     ),
     el('div', { className: 'live-insert-title', textContent: '다음 파트로 넣기' }),
@@ -796,6 +800,7 @@ function renderScoreTools(pos, container) {
   container.replaceChildren(
     tool('repeat', ctx.curName ? `${ctx.curName} 한 번 더` : '한 번 더', () => liveOps.repeat(ctx), !ctx.curName),
     tool('skip', ctx.nextName ? `${ctx.nextName} 건너뛰기` : '건너뛰기', () => liveOps.skip(ctx), !ctx.nextName),
+    tool('plus', '+1 마디', () => liveOps.addBar(ctx), !ctx.curName),
     tool('flag', '이 파트 후 끝', liveOps.end, !ctx.nextItem),
     el('span', { className: 'tool-sep' }),
     ...ctx.kinds.map(({ sec, k }) => insertChip(sec, k)),
@@ -1029,10 +1034,30 @@ function bindSettings() {
   bind('set-voice', 'voice', { type: 'checked' });
   bind('set-voice-uri', 'voiceURI', { parse: String });
   bind('set-voice-vol', 'voiceVolume');
-  bind('set-latency', 'latencyMs', { out: 'set-latency-out' });
   bind('set-lead', 'speechLeadMs', { out: 'set-lead-out' });
   bind('set-wake', 'wakeLock', { type: 'checked' });
   $('set-wake').addEventListener('change', () => (settings.wakeLock ? requestWakeLock() : releaseWakeLock()));
+
+  // 메트로놈 소리
+  const soundBox = $('set-click-sound');
+  const showSound = () => soundBox.querySelectorAll('button').forEach((b) => b.classList.toggle('on', b.dataset.v === settings.clickSound));
+  soundBox.replaceChildren(...Object.entries(CLICK_SOUNDS).map(([v, label]) => {
+    const b = el('button', { type: 'button', textContent: label });
+    b.dataset.v = v;
+    b.onclick = () => {
+      settings.clickSound = v;
+      showSound();
+      saveSettings();
+      engine.unlock();
+      engine.loadCountVoice();
+      const play = () => engine.previewClick();
+      if (v === 'female' || v === 'male') engine.countVoice.loading?.then(play);
+      else play();
+    };
+    return b;
+  }));
+  showSound();
+  bindLatency();
 
   const voiceSet = $('set-voice-set');
   const showVoiceSet = () => {
@@ -1066,9 +1091,209 @@ function bindSettings() {
   };
 }
 
+// ---------- 소리 지연: 블루투스 보정 · 탭으로 맞추기 ----------
+function renderLatency() {
+  $('set-bt').checked = settings.btOn;
+  $('set-bt-auto').checked = settings.btAuto;
+  $('bt-ms-v').textContent = `${settings.btMs}ms`;
+  $('lat-label').textContent = settings.btOn ? '블루투스 보정' : '스피커 보정';
+  const v = settings.btOn ? settings.btMs : settings.latencyMs;
+  $('set-latency').value = v;
+  $('set-latency-out').textContent = v;
+  renderPills();
+}
+
+function setBluetooth(on, why = '') {
+  if (settings.btOn === on) return;
+  settings.btOn = on;
+  saveSettings();
+  engine.retime();
+  renderLatency();
+  if (why) toast(on ? `${why} · 블루투스 보정 ${settings.btMs}ms 켬` : `${why} · 블루투스 보정 끔`);
+}
+
+/** 지금 소리가 블루투스로 나가는지: true/false, 알 수 없으면 null */
+async function detectBluetooth() {
+  try {
+    const devs = await navigator.mediaDevices?.enumerateDevices?.();
+    const outs = (devs || []).filter((d) => d.kind === 'audiooutput' && d.label);
+    if (outs.length) {
+      const def = outs.find((d) => d.deviceId === 'default') || outs[0];
+      return /bluetooth|airpods|buds|headset|hands-?free|beats|bose|jbl|sony|wh-|wf-/i.test(def.label);
+    }
+  } catch { /* 지원 안 함 */ }
+  const lat = engine.ctx?.outputLatency;
+  if (lat) return lat > 0.09; // 블루투스는 보통 출력 지연이 크게 보고된다
+  return null;
+}
+
+// 시트가 열려 있으면 그 밖은 누를 수 없으므로, 배너를 열린 시트 안에 넣어 띄운다
+let btBannerTimer;
+function hideBtBanner() {
+  const b = $('bt-banner');
+  b.classList.add('hidden');
+  document.body.append(b);
+}
+function showBtBanner() {
+  const b = $('bt-banner');
+  const open = [...document.querySelectorAll('dialog[open]')].pop();
+  (open || document.body).append(b);
+  b.classList.remove('hidden');
+  clearTimeout(btBannerTimer);
+  btBannerTimer = setTimeout(hideBtBanner, 15000);
+}
+
+let deviceTimer;
+function onDeviceChange() {
+  clearTimeout(deviceTimer);
+  // 장치가 바뀐 직후엔 정보가 늦게 갱신돼서 조금 기다린다
+  deviceTimer = setTimeout(async () => {
+    if (!settings.btAuto) return;
+    const bt = await detectBluetooth();
+    if (bt === null) showBtBanner();
+    else setBluetooth(bt, bt ? '블루투스 연결됨' : '블루투스 해제됨');
+  }, 1200);
+}
+
+function bindLatency() {
+  renderLatency();
+  $('set-bt').addEventListener('change', () => setBluetooth($('set-bt').checked));
+  $('set-bt-auto').addEventListener('change', () => {
+    settings.btAuto = $('set-bt-auto').checked;
+    saveSettings();
+  });
+  $('set-latency').addEventListener('input', () => {
+    const v = Number($('set-latency').value);
+    if (settings.btOn) settings.btMs = v;
+    else settings.latencyMs = v;
+    $('set-latency-out').textContent = v;
+    $('bt-ms-v').textContent = `${settings.btMs}ms`;
+    saveSettings();
+    engine.retime();
+  });
+  $('pill-bt').onclick = () => setBluetooth(!settings.btOn, '직접 전환');
+  $('bt-banner-on').onclick = () => {
+    hideBtBanner();
+    setBluetooth(true, '블루투스');
+  };
+  $('bt-banner-off').onclick = () => {
+    hideBtBanner();
+    setBluetooth(false, '스피커');
+  };
+  navigator.mediaDevices?.addEventListener?.('devicechange', onDeviceChange);
+
+  // 탭으로 맞추기
+  const calib = {
+    expected: [], taps: [], running: false, result: 0,
+  };
+  const COUNT = 16;
+  const INTERVAL = 0.6;
+  const pad = $('calib-pad');
+  const dots = () => $('calib-dots').replaceChildren(...Array.from({ length: COUNT }, (_, i) => el('span', { className: i < calib.taps.length ? 'on' : '' })));
+  const reset = () => {
+    calib.running = false;
+    pad.classList.remove('running');
+    $('calib-pad-text').textContent = '시작';
+    $('calib-result').classList.add('hidden');
+    calib.taps = [];
+    dots();
+  };
+  const median = (a) => {
+    const s = [...a].sort((x, y) => x - y);
+    return s.length % 2 ? s[(s.length - 1) / 2] : (s[s.length / 2 - 1] + s[s.length / 2]) / 2;
+  };
+  const finish = () => {
+    calib.running = false;
+    pad.classList.remove('running');
+    $('calib-pad-text').textContent = '다시 시작';
+    // 첫 3번은 몸풀기로 빼고, 각 탭을 가장 가까운 클릭과 비교
+    const diffs = [];
+    for (const tap of calib.taps) {
+      let best = 0;
+      for (let i = 1; i < calib.expected.length; i++) {
+        if (Math.abs(calib.expected[i] - tap) < Math.abs(calib.expected[best] - tap)) best = i;
+      }
+      const d = tap - calib.expected[best];
+      if (best >= 3 && Math.abs(d) < 400) diffs.push(d);
+    }
+    $('calib-result').classList.remove('hidden');
+    if (diffs.length < 6) {
+      $('calib-msg').textContent = '탭이 너무 적었어요. 들리는 소리에 맞춰 끝까지 탭해 주세요.';
+      $('calib-save-bt').classList.add('hidden');
+      $('calib-save-base').classList.add('hidden');
+      return;
+    }
+    const m = median(diffs);
+    const ms = Math.round(median(diffs.filter((d) => Math.abs(d - m) < 120)) / 5) * 5;
+    calib.result = Math.max(-200, Math.min(600, ms));
+    $('calib-msg').innerHTML = ms > 15
+      ? `소리가 화면보다 약 <b class="accent">${ms}ms</b> 늦게 들려요`
+      : ms < -15 ? `소리보다 약 <b class="accent">${-ms}ms</b> 일찍 탭했어요` : '거의 딱 맞아요 (지연 없음)';
+    $('calib-save-bt').classList.remove('hidden');
+    $('calib-save-base').classList.remove('hidden');
+    // 크게 늦으면 블루투스일 가능성이 높다
+    $('calib-save-bt').className = `btn ${ms > 80 ? 'primary' : 'soft'} block`;
+    $('calib-save-base').className = `btn ${ms > 80 ? 'soft' : 'primary'} block`;
+  };
+  pad.addEventListener('pointerdown', (e) => {
+    e.preventDefault();
+    if (!calib.running) {
+      if (app.state?.playback) {
+        toast('재생을 멈춘 뒤에 해 주세요');
+        return;
+      }
+      engine.unlock();
+      reset();
+      calib.running = true;
+      pad.classList.add('running');
+      $('calib-pad-text').textContent = '들리는 소리에 맞춰 탭!';
+      calib.expected = engine.calibrationClicks(COUNT, INTERVAL);
+      setTimeout(finish, calib.expected[COUNT - 1] - performance.now() + 900);
+      return;
+    }
+    calib.taps.push(e.timeStamp);
+    pad.classList.add('hit');
+    setTimeout(() => pad.classList.remove('hit'), 80);
+    dots();
+  });
+  const save = (bt) => {
+    if (bt) {
+      settings.btMs = calib.result;
+      settings.btOn = true;
+    } else {
+      settings.latencyMs = calib.result;
+      settings.btOn = false;
+    }
+    saveSettings();
+    engine.retime();
+    renderLatency();
+    toast(`${bt ? '블루투스' : '스피커'} 보정 ${calib.result}ms 저장`);
+    $('dlg-calib').close();
+  };
+  $('calib-save-bt').onclick = () => save(true);
+  $('calib-save-base').onclick = () => save(false);
+  $('calib-retry').onclick = reset;
+  $('btn-calibrate').onclick = () => {
+    reset();
+    $('dlg-calib').showModal();
+  };
+}
+
 // ---------- 이벤트 바인딩 ----------
+/** 소리를 켤 때 한 번: 블루투스로 나가는지 알 수 있으면 보정을 자동으로 맞춘다 */
+let outputChecked = false;
+function afterUnlock() {
+  updateAudioGate();
+  if (outputChecked || !settings.btAuto) return;
+  outputChecked = true;
+  setTimeout(async () => {
+    const bt = await detectBluetooth();
+    if (bt !== null) setBluetooth(bt, bt ? '블루투스 연결됨' : '');
+  }, 800);
+}
+
 function enterWithAudio(type, data) {
-  engine.unlock().then(updateAudioGate, () => {});
+  engine.unlock().then(afterUnlock, () => {});
   sendWhenOpen(type, { ...data, name: myName(), key: clientKey });
 }
 
@@ -1106,7 +1331,7 @@ function bindRoom() {
 
   $('btn-unlock').onclick = () => {
     engine.unlock().then(() => {
-      updateAudioGate();
+      afterUnlock();
       const pb = app.state?.playback;
       if (pb && app.plan) engine.start(app.plan, pb.startAt);
     }, () => toast('오디오를 켤 수 없어요'));

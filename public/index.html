@@ -161,6 +161,7 @@
           <button id="pill-count" class="pill ctl-pill"><span class="pill-k">카운트</span> <b id="pill-count-v">-</b></button>
           <button id="pill-volume" class="pill"><span class="pill-k">소리</span> <b id="pill-volume-v">-</b></button>
           <button id="pill-voice" class="pill"><span class="pill-k">목소리</span> <b id="pill-voice-v">-</b></button>
+          <button id="pill-bt" class="pill"><span class="pill-k">블루투스 보정</span> <b id="pill-bt-v">-</b></button>
         </div>
       </article>
 
@@ -417,6 +418,8 @@
     <div class="sheet-body">
       <div class="options-box">
         <label class="toggle"><span>메트로놈 클릭</span><input type="checkbox" id="set-click"><span class="toggle-ui"></span></label>
+        <p class="field-label">메트로놈 소리 <small class="hint-inline">누르면 들어볼 수 있어요</small></p>
+        <div class="sound-grid" id="set-click-sound"></div>
         <label class="range-line"><span>클릭 크기</span><input type="range" id="set-click-vol" min="0" max="1" step="0.05"></label>
         <label class="range-line"><span>잘게 쪼갠 박 크기</span><input type="range" id="set-sub-vol" min="0" max="1" step="0.05"></label>
       </div>
@@ -438,14 +441,50 @@
         <button type="button" id="btn-test-voice" class="btn soft sm"><span data-icon="mic"></span>목소리 들어보기</button>
       </div>
       <div class="options-box">
-        <label class="range-line"><span>소리 지연 보정 <output id="set-latency-out">0</output>ms</span><input type="range" id="set-latency" min="-300" max="500" step="5"></label>
-        <p class="hint">블루투스 이어폰처럼 소리가 늦게 나오면 값을 올리세요.</p>
+        <p class="box-title">소리 지연 맞추기</p>
+        <p class="hint">블루투스 이어폰·스피커는 소리가 화면보다 늦게 나와요. 들리는 클릭에 맞춰 탭하면 얼마나 늦는지 재서 다른 기기·화면과 맞춰요.</p>
+        <button type="button" id="btn-calibrate" class="btn primary block"><span data-icon="tap"></span>탭으로 지연 맞추기</button>
+        <label class="toggle"><span>블루투스 보정 <b id="bt-ms-v" class="accent"></b></span><input type="checkbox" id="set-bt"><span class="toggle-ui"></span></label>
+        <label class="toggle"><span>장치가 바뀌면 자동으로 켜고 끄기<small class="sub">지원하는 기기에서만 자동, 아니면 바뀔 때 물어봐요</small></span><input type="checkbox" id="set-bt-auto"><span class="toggle-ui"></span></label>
+        <label class="range-line"><span><span id="lat-label">스피커 보정</span> <output id="set-latency-out">0</output>ms (직접 조절)</span><input type="range" id="set-latency" min="-200" max="600" step="5"></label>
+      </div>
+      <div class="options-box">
         <label class="toggle"><span>화면 꺼짐 방지</span><input type="checkbox" id="set-wake"><span class="toggle-ui"></span></label>
       </div>
       <p id="sync-info" class="hint center"></p>
     </div>
     <div class="sheet-foot"><button class="btn primary block lg" data-close>완료</button></div>
   </dialog>
+
+  <!-- ================= 시트: 탭으로 지연 맞추기 ================= -->
+  <dialog id="dlg-calib" class="sheet">
+    <div class="sheet-head">
+      <div><h2>탭으로 지연 맞추기</h2><p class="hint">블루투스 장치를 연결한 상태에서 해 주세요</p></div>
+      <button class="icon-btn round soft" data-close aria-label="닫기"><span data-icon="close"></span></button>
+    </div>
+    <div class="sheet-body">
+      <ol class="calib-steps">
+        <li>시작을 누르면 "딱" 소리가 16번 나요.</li>
+        <li>화면은 보지 말고, <b>귀에 들리는 소리에 맞춰</b> 아래 큰 버튼을 탭하세요.</li>
+      </ol>
+      <button id="calib-pad" class="calib-pad" type="button"><span id="calib-pad-text">시작</span></button>
+      <div id="calib-dots" class="calib-dots"></div>
+      <div id="calib-result" class="calib-result hidden">
+        <p id="calib-msg" class="calib-msg"></p>
+        <div class="calib-save">
+          <button id="calib-save-bt" class="btn primary block">블루투스 보정으로 저장</button>
+          <button id="calib-save-base" class="btn soft block">스피커(기본) 보정으로 저장</button>
+          <button id="calib-retry" class="btn ghost sm">다시 하기</button>
+        </div>
+      </div>
+    </div>
+  </dialog>
+
+  <!-- 출력 장치가 바뀌었을 때 (자동 판단이 안 되는 기기) -->
+  <div id="bt-banner" class="bt-banner hidden" role="alert">
+    <span>소리 출력 장치가 바뀌었어요. 블루투스 보정을 쓸까요?</span>
+    <div class="row"><button id="bt-banner-on" class="btn primary sm">켜기</button><button id="bt-banner-off" class="btn soft sm">끄기</button></div>
+  </div>
 
   <!-- ================= 시트: 참가자 ================= -->
   <dialog id="dlg-members" class="sheet">

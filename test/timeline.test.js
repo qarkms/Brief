@@ -166,3 +166,14 @@ test('재생 순서(sequence)로 반복·생략된 송폼', async () => {
   assert.equal(pos.cur, 1);
   assert.equal(pos.firstEditable, 2);
 });
+
+test('목소리 메트로놈용 이벤트: 박 번호·반 박·브리핑과 겹침 표시', async () => {
+  const { buildPlan: bp, normalizeSong: ns } = await import('../public/js/timeline.js');
+  const { buildEvents } = await import('../public/js/engine.js');
+  const plan = bp({ songs: [ns({ bpm: 120, subdivision: 2, countInBars: 1, sections: [{ name: 'Verse', bars: 1 }] })] });
+  const clicks = buildEvents(plan).sounds.filter((e) => e.type === 'click');
+  assert.deepEqual(clicks.slice(0, 4).map((c) => [c.num, c.half]), [[1, false], [1, true], [2, false], [2, true]]);
+  // "Verse" 브리핑(0초)과 겹치는 첫 박들은 quiet
+  assert.equal(clicks[0].quiet, true);
+  assert.equal(clicks[4].quiet, false);
+});

@@ -199,6 +199,17 @@ export class Room {
         seq.splice(i, 1);
         break;
       }
+      case 'addBar': {
+        // 지금 파트를 한 마디 늘린다. 파트 끝이 코앞이면 곧 시작할 다음 파트를 늘린다.
+        // (늘려도 그 파트가 끝나기 전까지는 아무것도 바뀌지 않으므로 "끝"이 아직 남았는지만 본다)
+        const target = plan.items.find((it) => it.end > time + 0.25);
+        const i = target ? target.seq : -1;
+        if (i < 0 || !sameSong(i)) return 'NOT_IN_SECTION';
+        const [s0, k0, extra = 0] = seq[i];
+        if (extra >= 64) return 'TOO_MANY';
+        seq[i] = [s0, k0, extra + 1];
+        break;
+      }
       case 'endSong': {
         let n = 0;
         while (sameSong(nextPos)) {

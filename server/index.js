@@ -68,6 +68,7 @@ const LIVE_ERRORS = {
   NOTHING_NEXT: '이 곡에 남은 다음 파트가 없어요.',
   NOT_IN_SECTION: '파트가 시작된 뒤에 반복할 수 있어요.',
   NOT_PLAYING: '재생 중이 아니에요.',
+  TOO_MANY: '더 늘릴 수 없어요.',
 };
 
 const cleanName = (v) => (typeof v === 'string' ? v.trim().slice(0, 24) : '') || '멤버';

@@ -105,3 +105,18 @@ test('클릭 쪼개기를 재생 중에 바꾸면 셋리스트와 지금 재생�
   assert.equal(room.setSubdivision(0, 5), false);
   room.dispose();
 });
+
+test('+1 마디: 지금 파트가 한 마디 늘고 뒤 파트가 밀린다', () => {
+  const { room, now } = playing();
+  // Verse(2~6초) 중
+  assert.equal(room.live({ op: 'addBar' }, now(3)), null);
+  assert.deepEqual(room.playback.sequence[0], [0, 0, 1]);
+  const plan = buildPlan(room.playback);
+  assert.deepEqual(plan.items.map((it) => [it.bars, it.t]), [[3, 2], [2, 8], [1, 12], [1, 14]]);
+  // 마지막 마디 첫 박에 다시 브리핑 (원래 4초 → 6초)
+  assert.equal(plan.briefs.find((b) => b.text === 'Chorus').t, 6);
+  // 파트 끝 직전(7.9초에 Verse 끝은 8초)엔 곧 시작할 Chorus를 늘린다
+  assert.equal(room.live({ op: 'addBar' }, now(7.9)), null);
+  assert.deepEqual(room.playback.sequence.slice(0, 2), [[0, 0, 1], [0, 1, 1]]);
+  room.dispose();
+});
