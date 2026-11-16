@@ -838,21 +838,26 @@ body.solo .stage-status::before { content: "나만 · "; color: var(--t-verse); 
 
 .splash {
   position: fixed; inset: 0; z-index: 200; display: flex; flex-direction: column; align-items: center; justify-content: center;
-  gap: 8px; padding: 32px 24px calc(32px + env(safe-area-inset-bottom)); background: #ffffff; cursor: pointer;
+  padding: 32px 24px calc(32px + env(safe-area-inset-bottom)); background: #ffffff; cursor: pointer;
   transition: opacity 0.6s ease;
 }
 .splash.leaving { opacity: 0; pointer-events: none; }
 .splash.gone { display: none; }
-.splash-logo { width: min(46vw, 230px); height: auto; animation: splash-in 0.9s ease-out both; }
-.splash-name { margin: 6px 0 22px; font-size: 1.5rem; font-weight: 800; letter-spacing: 0.35em; padding-left: 0.35em; color: #2f6f73; animation: splash-in 0.9s 0.15s ease-out both; }
-.splash .verse { max-width: 520px; animation: splash-in 1s 0.35s ease-out both; }
-.splash .verse-ko { font-size: clamp(1.05rem, 4.4vw, 1.35rem); }
-.splash .verse-en { font-size: clamp(1.1rem, 4.6vw, 1.45rem); }
-@keyframes splash-in { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
-
-.verse-card {
-  background: linear-gradient(180deg, #f2fafa, #ffffff); border: 1.5px solid #d4ebeb; border-radius: var(--radius);
-  box-shadow: var(--shadow-sm); padding: 18px 18px 14px; margin: 6px 0 4px;
+.splash .verse { max-width: 520px; animation: splash-in 1s 0.1s ease-out both; }
+.splash .verse-ko { font-size: clamp(1.1rem, 4.6vw, 1.4rem); }
+.splash .verse-en { font-size: clamp(1.15rem, 4.8vw, 1.5rem); margin-top: 12px; }
+.splash .verse-ref { margin-top: 14px; }
+/* 맨 아래 작게: 로고 + 이름 */
+.splash-brand {
+  position: absolute; left: 0; right: 0; bottom: calc(28px + env(safe-area-inset-bottom));
+  display: flex; align-items: center; justify-content: center; gap: 8px; animation: splash-in 1s 0.4s ease-out both;
 }
-.verse-card .verse-ko { font-size: 0.98rem; }
-.verse-card .verse-en { font-size: 1.08rem; }
+.splash-logo { width: 30px; height: 30px; }
+.splash-name { font-size: 0.85rem; font-weight: 800; letter-spacing: 0.3em; color: #2f6f73; }
+@keyframes splash-in { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+
+/* 홈 위쪽: 칸 없이 작게 */
+.verse-mini { text-align: center; padding: 4px 8px 2px; }
+.verse-mini .verse-ko { font-size: 0.78rem; font-weight: 700; color: var(--muted); line-height: 1.5; text-wrap: balance; }
+.verse-mini .verse-ref { display: inline; margin: 0 0 0 4px; font-size: 0.72rem; }
+.verse-mini .verse-en { margin-top: 2px; font-size: 0.86rem; color: #4f8d91; text-wrap: balance; }
