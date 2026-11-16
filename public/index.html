@@ -158,7 +158,7 @@
 
         <div id="stage-form" class="form-strip slim"></div>
         <div id="structure" class="chip-row"></div>
-        <p class="hint ctl-only" id="structure-hint">파트를 누르면 거기부터 시작해요</p>
+        <p class="hint drive-only" id="structure-hint">파트를 누르면 거기부터 시작해요</p>
 
         <div class="card-divider"></div>
         <div class="pill-row">
@@ -175,10 +175,10 @@
         <div id="live-panel"></div>
       </section>
 
-      <p class="guest-only hint center">방장이 시작하면 모두의 기기에서 함께 시작돼요</p>
+      <p class="guest-only hint center" id="guest-hint">혼자 연습은 나에게만 들려요 · 방장이 시작하면 모두 함께 시작돼요</p>
     </main>
 
-    <div class="cta-bar ctl-only">
+    <div class="cta-bar drive-only">
       <button id="btn-prev" class="round-btn" aria-label="이전 곡"><span data-icon="prev"></span></button>
       <button id="btn-play" class="btn primary cta"><span data-icon="playOutline" class="ic-play"></span><span data-icon="stop" class="ic-stop"></span><span id="play-label">브리핑 시작</span></button>
       <button id="btn-next" class="round-btn" aria-label="다음 곡"><span data-icon="next"></span></button>
@@ -195,17 +195,33 @@
         <span id="score-beats" class="beats mini"></span>
         <span id="score-brief" class="score-brief"></span>
       </div>
-      <div class="score-actions ctl-only">
+      <div class="score-right">
+        <button id="score-ink" class="btn soft sm"><span data-icon="edit"></span>필기</button>
+        <div class="score-actions drive-only">
         <button id="score-play" class="btn primary sm" aria-label="시작/정지"><span data-icon="play" class="ic-play"></span><span data-icon="stop" class="ic-stop"></span></button>
+        </div>
       </div>
       <div id="score-form" class="form-strip compact"></div>
-      <div id="score-tools" class="score-tools ctl-only hidden"></div>
+      <div id="score-tools" class="score-tools hidden"></div>
     </div>
     <div id="score-pages" class="score-pages"></div>
     <div id="score-empty" class="score-empty hidden">
       <span data-icon="score" class="empty-ic"></span>
       <p>이 곡에는 아직 악보가 없어요.</p>
       <p class="hint ctl-only">곡 편집에서 이미지나 PDF 악보를 올릴 수 있어요.</p>
+    </div>
+    <!-- 필기 도구 (나만 보임) -->
+    <div id="ink-bar" class="ink-bar hidden">
+      <span class="ink-label">나만 보는 필기</span>
+      <button class="ink-tool on" data-tool="pen" data-color="#e5484d" aria-label="빨간 펜"><span class="sw" style="background:#e5484d"></span></button>
+      <button class="ink-tool" data-tool="pen" data-color="#2f6bff" aria-label="파란 펜"><span class="sw" style="background:#2f6bff"></span></button>
+      <button class="ink-tool" data-tool="pen" data-color="#1e2a44" aria-label="검은 펜"><span class="sw" style="background:#1e2a44"></span></button>
+      <button class="ink-tool" data-tool="marker" aria-label="형광펜"><span class="sw marker"></span></button>
+      <button class="ink-tool" data-tool="eraser" aria-label="지우개"><span data-icon="eraser"></span></button>
+      <span class="ink-sep"></span>
+      <button id="ink-undo" class="ink-act" aria-label="되돌리기"><span data-icon="undo"></span></button>
+      <button id="ink-clear" class="ink-act" aria-label="이 페이지 필기 지우기"><span data-icon="trash"></span></button>
+      <button id="ink-done" class="btn primary sm">완료</button>
     </div>
     <div class="score-nav">
       <button id="score-prev" class="round-btn sm" aria-label="이전 페이지"><span data-icon="left"></span></button>

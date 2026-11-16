@@ -290,3 +290,75 @@ export function livePosition(plan, time, margin = 0.25) {
     nextItem: editable || null,
   };
 }
+
+/**
+ * 실시간 송폼 변경 (서버의 방 재생과 멤버의 혼자 연습이 같은 규칙을 쓴다).
+ * 아직 시작하지 않은 파트만 바뀌므로 지난 박은 그대로다. pb.sequence와 pb.rev를 바꾼다.
+ * op: insert(sectionIndex) | repeat | skipNext | remove(seq, rev) | addBar | endSong
+ * 성공하면 null, 실패하면 이유 코드.
+ */
+export function applyLiveOp(pb, msg, now) {
+  const plan = buildPlan(pb);
+  const time = (now - pb.startAt) / 1000;
+  const pos = livePosition(plan, time);
+  const seq = pb.sequence;
+  // 지금 곡: 연주 중인 파트의 곡, 카운트인/간격이면 다음 파트의 곡
+  const ctxItem = pos.curItem || pos.nextItem;
+  if (!ctxItem) return 'TOO_LATE';
+  const songIndex = ctxItem.songIndex;
+  const song = pb.songs[songIndex];
+  // 다음 파트 자리: 현재 파트 바로 뒤. 이미 너무 늦었으면 그다음 자리.
+  const nextPos = Math.max(pos.cur + 1, pos.firstEditable === Infinity ? seq.length : pos.firstEditable);
+  const sameSong = (i) => i < seq.length && seq[i][0] === songIndex;
+
+  switch (msg.op) {
+    case 'insert': {
+      const k = Number(msg.sectionIndex);
+      if (!Number.isInteger(k) || !song.sections[k]) return 'BAD_SECTION';
+      seq.splice(nextPos, 0, [songIndex, k]);
+      break;
+    }
+    case 'repeat': {
+      if (pos.cur < 0) return 'NOT_IN_SECTION';
+      seq.splice(nextPos, 0, [...seq[pos.cur]]);
+      break;
+    }
+    case 'skipNext': {
+      if (!sameSong(nextPos)) return 'NOTHING_NEXT';
+      seq.splice(nextPos, 1);
+      break;
+    }
+    case 'remove': {
+      const i = Number(msg.seq);
+      if (msg.rev !== pb.rev) return 'STALE';
+      if (!Number.isInteger(i) || i < pos.firstEditable || i >= seq.length) return 'TOO_LATE';
+      seq.splice(i, 1);
+      break;
+    }
+    case 'addBar': {
+      // 지금 파트를 한 마디 늘린다. 파트 끝이 코앞이면 곧 시작할 다음 파트를 늘린다.
+      // (늘려도 그 파트가 끝나기 전까지는 아무것도 바뀌지 않으므로 "끝"이 아직 남았는지만 본다)
+      const target = plan.items.find((it) => it.end > time + 0.25);
+      const i = target ? target.seq : -1;
+      if (i < 0 || !sameSong(i)) return 'NOT_IN_SECTION';
+      const [s0, k0, extra = 0] = seq[i];
+      if (extra >= 64) return 'TOO_MANY';
+      seq[i] = [s0, k0, extra + 1];
+      break;
+    }
+    case 'endSong': {
+      let n = 0;
+      while (sameSong(nextPos)) {
+        seq.splice(nextPos, 1);
+        n++;
+      }
+      if (!n) return 'NOTHING_NEXT';
+      break;
+    }
+    default:
+      return 'BAD_OP';
+  }
+  if (seq.length > LIMITS.sequence) seq.length = LIMITS.sequence;
+  pb.rev++;
+  return null;
+}

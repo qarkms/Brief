@@ -1,7 +1,7 @@
 import { Connection } from './net.js';
 import { CLICK_SOUNDS, DEFAULT_SETTINGS, Engine } from './engine.js';
 import {
-  buildPlan, findBarIndex, makeId, normalizeSetlist, normalizeSong, sectionMeter, songDuration,
+  applyLiveOp, buildPlan, defaultSequence, findBarIndex, makeId, normalizeSetlist, normalizeSong, sectionMeter, songDuration,
 } from './timeline.js';
 import {
   bindStepper, countText, formatDuration, openEditor, setChoice, splitText,
@@ -17,6 +17,9 @@ import {
   ensureSheets, preload, setSheetImg, uploadSheetFile,
 } from './sheets.js';
 import { VOICES } from './voice.js';
+import {
+  attachInk, clearVisibleInk, ink, redrawInk, undoInk,
+} from './ink.js';
 
 const $ = (id) => document.getElementById(id);
 
@@ -67,6 +70,19 @@ const me = () => app.state?.members.find((m) => m.id === app.me);
 const isOwner = () => !!app.state && app.state.hostId === app.me;
 const canControl = () => isOwner() || me()?.role === 'cohost';
 const hostTokenFor = (code) => store.get(`brief.host.${code}`, null);
+
+// ---------- 재생: 방 전체 재생이 우선, 없으면 멤버의 혼자 연습 ----------
+// app.local = 이 기기에서만 도는 연습 재생 (방장·부방장이 아닌 멤버용)
+const activePb = () => app.state?.playback || app.local || null;
+const isSolo = () => !app.state?.playback && !!app.local;
+/** 시작·정지·송폼 변경을 할 수 있는지: 방장·부방장은 방 전체, 멤버는 방 재생이 없을 때 혼자 연습 */
+const canDrive = () => !!app.state && (canControl() || !app.state.playback);
+/** 선택된 곡·파트: 멤버는 자기 연습용 선택이 있으면 그것 */
+const selSong = () => (!canControl() && app.localSel && app.localSel.song < app.state.setlist.length ? app.localSel.song : app.state.selectedSong);
+const selSection = () => {
+  if (canControl() || !app.localSel || app.localSel.song !== selSong()) return app.state.selectedSection;
+  return Math.min(app.localSel.section, app.state.setlist[selSong()].sections.length - 1);
+};
 const auth = () => ({ room: app.code, hostToken: hostTokenFor(app.code), key: clientKey });
 
 // ---------- 토스트 ----------
@@ -173,6 +189,8 @@ function leaveRoom() {
   app.plan = null;
   app.playId = null;
   app.rev = null;
+  app.local = null;
+  app.localSel = null;
   store.set('brief.session', null);
   history.replaceState(null, '', location.pathname);
 }
@@ -185,24 +203,17 @@ function onState(state) {
   const ctl = canControl();
   document.body.classList.toggle('ctl', ctl);
   document.body.classList.toggle('owner', isOwner());
-  document.body.classList.toggle('playing', !!state.playback);
-  $('play-label').textContent = state.playback ? '정지' : '브리핑 시작';
   if (wasControl !== null && ctl !== wasControl && !isOwner()) toast(ctl ? '부방장이 되었어요' : '부방장 권한이 해제됐어요');
   wasControl = ctl;
-
-  const pb = state.playback;
-  if ((pb && pb.playId) !== app.playId) {
-    app.playId = pb ? pb.playId : null;
-    app.rev = pb ? pb.rev : null;
-    app.plan = pb ? buildPlan(pb) : null;
-    if (pb && engine.unlocked) engine.start(app.plan, pb.startAt);
-    else engine.stop();
-  } else if (pb && pb.rev !== app.rev) {
-    // 실시간 송폼 변경: 같은 재생을 이어가며 앞으로의 파트만 다시 예약
-    app.rev = pb.rev;
-    app.plan = buildPlan(pb);
-    engine.update(app.plan);
+  if (ctl) {
+    app.local = null;
+    app.localSel = null;
   }
+  if (state.playback && app.local) {
+    app.local = null;
+    toast('방장이 시작해서 모두 함께 재생으로 바뀌었어요');
+  }
+  syncPlayback();
 
   if (ctl) {
     store.set('brief.setlist', state.setlist);
@@ -234,6 +245,68 @@ function onState(state) {
   score.key = null;
 }
 
+/** 지금 재생(방 또는 혼자 연습)에 맞춰 소리 예약과 화면 상태를 맞춘다 */
+function syncPlayback() {
+  const pb = activePb();
+  if ((pb && pb.playId) !== app.playId) {
+    app.playId = pb ? pb.playId : null;
+    app.rev = pb ? pb.rev : null;
+    app.plan = pb ? buildPlan(pb) : null;
+    if (pb && engine.unlocked) engine.start(app.plan, pb.startAt);
+    else engine.stop();
+  } else if (pb && pb.rev !== app.rev) {
+    // 실시간 송폼 변경: 같은 재생을 이어가며 앞으로의 파트만 다시 예약
+    app.rev = pb.rev;
+    app.plan = buildPlan(pb);
+    engine.update(app.plan);
+  }
+  const ctl = canControl();
+  document.body.classList.toggle('playing', !!pb && (ctl || isSolo()));
+  document.body.classList.toggle('solo', isSolo());
+  document.body.classList.toggle('drive', canDrive());
+  if (ctl) $('play-label').textContent = pb ? '정지' : '브리핑 시작';
+  else $('play-label').textContent = isSolo() ? '연습 정지' : '혼자 연습';
+  view.songKey = null;
+  view.liveKey = null;
+  score.key = null;
+}
+
+// ---------- 혼자 연습 (멤버: 이 기기에서만 재생) ----------
+function startLocal(songIndex = selSong(), sectionIndex = selSection()) {
+  const songs = structuredClone(app.state.setlist);
+  const pb = {
+    playId: `solo-${makeId()}`,
+    rev: 0,
+    local: true,
+    startAt: conn.serverNow() + 800,
+    songs,
+    sequence: defaultSequence({
+      songs, startSongIndex: songIndex, startSectionIndex: sectionIndex, autoAdvance: app.state.autoAdvance,
+    }),
+    startSongIndex: songIndex,
+    gapSeconds: app.state.gapSeconds,
+  };
+  pb.duration = buildPlan(pb).duration;
+  app.local = pb;
+  syncPlayback();
+}
+
+function stopLocal() {
+  app.local = null;
+  syncPlayback();
+}
+
+/** 혼자 연습이 끝까지 가면 다음 곡을 골라 둔다 */
+function checkLocalEnd() {
+  const pb = app.local;
+  if (!pb || app.state?.playback) return;
+  if (conn.serverNow() < pb.startAt + pb.duration * 1000 + 300) return;
+  const items = buildPlan(pb).items;
+  const last = items.length ? items[items.length - 1].songIndex : pb.startSongIndex;
+  app.localSel = { song: Math.min(last + 1, app.state.setlist.length - 1), section: 0 };
+  stopLocal();
+}
+
 function renderOptions() {
   const ctl = canControl();
   $('opt-auto').checked = app.state.autoAdvance;
@@ -259,19 +332,20 @@ function songMeta(song) {
 }
 
 function displaySongs() {
-  return app.state.playback ? app.state.playback.songs : app.state.setlist;
+  return activePb() ? activePb().songs : app.state.setlist;
 }
 
 function displaySong() {
   if (!app.state) return null;
-  return displaySongs()[view.songIndex ?? app.state.selectedSong];
+  return displaySongs()[view.songIndex ?? selSong()];
 }
 
 // ---------- 곡·셋리스트 시트 ----------
 function renderSetlist() {
-  const { setlist, selectedSong } = app.state;
+  const { setlist } = app.state;
+  const selectedSong = selSong();
   const ctl = canControl();
-  const playingSong = app.state.playback ? view.songIndex : null;
+  const playingSong = activePb() ? view.songIndex : null;
   $('setlist').replaceChildren(...setlist.map((song, i) => {
     const title = el('div', { className: 'title' }, el('span', { className: 'num', textContent: `${i + 1}.` }), el('span', { textContent: song.title }));
     if (song.sheets.length) title.append(icon('score'));
@@ -286,6 +360,13 @@ function renderSetlist() {
     );
     card.onclick = () => {
       if (ctl) conn.send('select', { songIndex: i, sectionIndex: 0 });
+      else if (!app.state.playback) {
+        // 멤버: 나만의 연습 곡 고르기 (연습 중이면 그 곡부터 다시)
+        app.localSel = { song: i, section: 0 };
+        if (app.local) startLocal(i, 0);
+        view.songKey = null;
+        renderSetlist();
+      }
     };
     const li = el('li', {}, card);
     if (ctl) {
@@ -377,13 +458,20 @@ function addSong() {
 }
 
 function currentSongIndex() {
-  return app.state.playback ? (view.songIndex ?? app.state.playback.startSongIndex) : app.state.selectedSong;
+  const pb = activePb();
+  return pb ? (view.songIndex ?? pb.startSongIndex) : selSong();
 }
 
 function stepSong(dir) {
   const n = app.state.setlist.length;
   const target = currentSongIndex() + dir;
   if (target < 0 || target >= n) return;
+  if (!canControl()) {
+    app.localSel = { song: target, section: 0 };
+    if (app.local) startLocal(target, 0);
+    view.songKey = null;
+    return;
+  }
   if (app.state.playback) conn.send('play', { songIndex: target, sectionIndex: 0 });
   else conn.send('select', { songIndex: target, sectionIndex: 0 });
 }
@@ -458,11 +546,11 @@ function renderLibrary() {
 /** 지금 이 순간 무엇이 연주되고 있는지 */
 function position() {
   const { state, plan } = app;
-  const pb = state.playback;
+  const pb = activePb();
   if (!pb || !plan || !plan.items.length) {
-    const si = state.selectedSong;
+    const si = selSong();
     return {
-      mode: 'idle', songIndex: si, song: state.setlist[si], sectionIndex: state.selectedSection, time: 0,
+      mode: 'idle', songIndex: si, song: state.setlist[si], sectionIndex: selSection(), time: 0,
     };
   }
   const t = (conn.serverNow() - pb.startAt) / 1000;
@@ -511,12 +599,12 @@ const sectionName = (pos) => (pos.sectionIndex < 0 ? '카운트' : pos.song.sect
 const sectionToneOf = (pos) => (pos.sectionIndex < 0 ? 'count' : sectionTone(sectionName(pos)));
 const nextName = (pos) => {
   const { item } = pos.next;
-  return app.state.playback.songs[item.songIndex].sections[item.sectionIndex].name;
+  return activePb().songs[item.songIndex].sections[item.sectionIndex].name;
 };
 
 /** 화면에 보여줄 송폼 조각: 재생 중이면 실제 진행 순서(실시간 변경 포함), 아니면 곡의 기본 송폼 */
 function segmentsFor(songIndex) {
-  const pb = app.state.playback;
+  const pb = activePb();
   if (pb && app.plan) {
     const song = pb.songs[songIndex];
     return app.plan.items.filter((it) => it.songIndex === songIndex).map((it) => {
@@ -560,8 +648,8 @@ function setBarHtml(html) {
 
 /** 곡이 바뀌거나 송폼이 바뀌면 카드 머리·칩·스트립을 다시 만든다 */
 function renderSongCard(pos) {
-  const pb = app.state.playback;
-  const key = `${pos.songIndex}:${app.playId}:${app.rev}:${app.state.selectedSection}:${JSON.stringify(pos.song.sections).length}:${pos.song.title}`;
+  const pb = activePb();
+  const key = `${pos.songIndex}:${app.playId}:${app.rev}:${selSection()}:${JSON.stringify(pos.song.sections).length}:${pos.song.title}`;
   if (view.songKey === key) return;
   view.songKey = key;
   view.songIndex = pos.songIndex;
@@ -581,11 +669,15 @@ function renderSongCard(pos) {
     );
     chip.dataset.key = sg.key;
     chip.dataset.tone = sectionTone(sg.name);
-    if (!pb && sg.key === app.state.selectedSection && sg.key > 0) chip.classList.add('selected');
+    if (!pb && sg.key === selSection() && sg.key > 0) chip.classList.add('selected');
     chip.onclick = () => {
-      if (!ctl) return;
-      if (!pb) conn.send('select', { songIndex: pos.songIndex, sectionIndex: sg.sectionIndex });
-      else toast('재생 중에는 아래 "실시간 송폼"에서 바꿀 수 있어요');
+      if (!canDrive()) return;
+      if (pb) toast('재생 중에는 아래 "실시간 송폼"에서 바꿀 수 있어요');
+      else if (ctl) conn.send('select', { songIndex: pos.songIndex, sectionIndex: sg.sectionIndex });
+      else {
+        app.localSel = { song: pos.songIndex, section: sg.sectionIndex };
+        view.songKey = null;
+      }
     };
     return chip;
   }));
@@ -629,7 +721,7 @@ function renderStage(pos) {
     if (!next) {
       setText('stage-next', bar.bar === bar.barsInSection ? '마지막 마디' : '마지막 파트');
     } else if (next.item.songIndex !== pos.songIndex) {
-      setText('stage-next', `다음 곡 · ${app.state.playback.songs[next.item.songIndex].title}`);
+      setText('stage-next', `다음 곡 · ${activePb().songs[next.item.songIndex].title}`);
     } else {
       soon = next.barsUntil === 1;
       nextKey = next.item.seq;
@@ -684,14 +776,28 @@ function renderStage(pos) {
 const groupOf = (m) => (m.unit >= 8 && m.beats > 3 && m.beats % 3 === 0 ? 3 : 0);
 
 // ---------- 실시간 송폼 (방장·부방장) ----------
+const LIVE_ERR = {
+  TOO_LATE: '이미 지나간 파트는 바꿀 수 없어요', NOTHING_NEXT: '이 곡에 남은 다음 파트가 없어요', NOT_IN_SECTION: '파트가 시작된 뒤에 할 수 있어요', TOO_MANY: '더 늘릴 수 없어요',
+};
 function liveSend(op, extra = {}, msg = '') {
-  conn.send('live', { op, rev: app.rev, ...extra });
+  if (isSolo()) {
+    // 혼자 연습: 서버와 같은 규칙으로 이 기기에서만 바꾼다
+    const err = applyLiveOp(app.local, { op, rev: app.local.rev, ...extra }, conn.serverNow());
+    if (err) {
+      toast(LIVE_ERR[err] || '송폼을 바꿀 수 없어요');
+      return;
+    }
+    app.local.duration = buildPlan(app.local).duration;
+    syncPlayback();
+  } else {
+    conn.send('live', { op, rev: app.rev, ...extra });
+  }
   if (msg) toast(msg);
 }
 
 /** 실시간 송폼 화면들이 함께 쓰는 현재 상황 */
 function liveContext(pos) {
-  const pb = app.state.playback;
+  const pb = activePb();
   const songIndex = pos.songIndex;
   const song = pb.songs[songIndex];
   const time = pos.time ?? 0;
@@ -775,8 +881,8 @@ function renderLive(pos, container) {
   const insert = el('div', { className: 'live-insert' }, ...ctx.kinds.map(({ sec, k }) => insertChip(sec, k)));
 
   container.replaceChildren(
-    el('div', { className: 'live-head' }, el('h2', { textContent: '실시간 송폼' }), el('span', { className: 'live-badge', textContent: 'LIVE' })),
-    el('p', { className: 'hint', textContent: `${song.title} · 바꾸면 모든 기기에 바로 반영돼요` }),
+    el('div', { className: 'live-head' }, el('h2', { textContent: isSolo() ? '혼자 연습 송폼' : '실시간 송폼' }), el('span', { className: `live-badge${isSolo() ? ' solo' : ''}`, textContent: isSolo() ? '나만' : 'LIVE' })),
+    el('p', { className: 'hint', textContent: isSolo() ? `${song.title} · 나에게만 적용돼요` : `${song.title} · 바꾸면 모든 기기에 바로 반영돼요` }),
     queue,
     el(
       'div',
@@ -812,7 +918,7 @@ function renderScoreTools(pos, container) {
 }
 
 function renderLivePanels(pos) {
-  const show = !!app.state.playback && canControl() && pos.mode !== 'end';
+  const show = !!activePb() && (canControl() || isSolo()) && pos.mode !== 'end';
   $('live-card').classList.toggle('hidden', !show);
   $('score-tools').classList.toggle('hidden', !show);
   const sheetOpen = $('dlg-live').open;
@@ -871,9 +977,14 @@ function renderScorePages(song) {
   score.page -= score.page % per;
   const shown = sheets.slice(score.page, score.page + per);
   box.classList.toggle('spread', shown.length > 1);
-  box.replaceChildren(...shown.map((p, i) => setSheetImg(el('img', {
-    alt: `${score.page + i + 1}쪽`, draggable: false, decoding: 'async',
-  }), p.id)));
+  box.replaceChildren(...shown.map((p, i) => {
+    const img = setSheetImg(el('img', { alt: `${score.page + i + 1}쪽`, draggable: false, decoding: 'async' }), p.id);
+    const page = el('div', { className: 'page' }, img);
+    // 두 장 펼침이면 가운데로 모이게 (왼쪽 장은 오른쪽에, 오른쪽 장은 왼쪽에 붙임)
+    const align = shown.length > 1 ? (i === 0 ? 'right' : 'left') : 'center';
+    attachInk(page, img, p.id, align);
+    return page;
+  }));
   const last = score.page + shown.length;
   setText('score-page', `${shown.length > 1 ? `${score.page + 1}–${last}` : score.page + 1} / ${sheets.length}`);
   preload(sheets.slice(last, last + per));
@@ -900,7 +1011,6 @@ function renderScore(pos) {
     score.key = key;
     score.songIndex = pos.songIndex;
     setText('score-title', `${pos.songIndex + 1}. ${song.title}`);
-    buildStrip($('score-form'), segmentsFor(pos.songIndex));
     renderScorePages(song);
     const nextSong = displaySongs()[pos.songIndex + 1];
     if (nextSong) preload(nextSong.sheets.slice(0, 2));
@@ -915,6 +1025,7 @@ function renderScore(pos) {
     const { next } = pos;
     const soon = next && next.barsUntil === 1 && next.item.songIndex === pos.songIndex;
     if (soon) brief = `▸ ${nextName(pos)}`;
+    renderScoreForm(pos, soon ? next.item.seq : null);
     updateFormStrip($('score-form'), pos.seq, pos.sectionProgress, soon ? next.item.seq : null);
   } else {
     bar.dataset.tone = 'count';
@@ -924,9 +1035,49 @@ function renderScore(pos) {
     else if (pos.mode === 'end') label = '끝';
     setText('score-pos', label);
     renderBeats($('score-beats'), song.beatsPerBar, -1);
+    renderScoreForm(pos, null);
     updateFormStrip($('score-form'), null, 0, null);
   }
   setText('score-brief', brief);
+}
+
+/**
+ * 악보 위 송폼: 글자가 잘리지 않을 만큼만, 지금 파트부터 보여준다.
+ * 지나간 파트는 사라지고, 화면에 못 들어간 파트 중 맨 앞 것을 NEXT로 미리 보여준다.
+ */
+function renderScoreForm(pos, briefKey) {
+  const box = $('score-form');
+  const segs = segmentsFor(pos.songIndex);
+  const width = box.clientWidth || innerWidth - 24;
+  // 한 칸에 이름·마디가 다 보이도록 약 110px, NEXT 칸 자리 남기기
+  const per = Math.max(2, Math.min(6, Math.floor((width - 130) / 110)));
+  let start = 0;
+  if (pos.mode === 'play' && pos.seq >= 0) start = Math.max(0, segs.findIndex((s) => s.key === pos.seq));
+  else if (pos.mode === 'idle') start = Math.max(0, segs.findIndex((s) => s.key === pos.sectionIndex));
+  const shown = segs.slice(start, start + per);
+  const hidden = segs.slice(start + per);
+  const key = `${pos.songIndex}:${app.playId}:${app.rev}:${start}:${per}:${segs.map((s) => s.key).join(',')}`;
+  if (box.dataset.wkey !== key) {
+    box.dataset.wkey = key;
+    buildStrip(box, shown);
+    if (hidden.length) {
+      const nx = hidden[0];
+      const next = el(
+        'div',
+        { className: 'seg-next' },
+        el('span', { className: 'nx-k', textContent: 'NEXT' }),
+        el('span', { className: 'nx-name', textContent: nx.name }),
+        el('span', { className: 'nx-bars', textContent: nx.bars }),
+        ...(hidden.length > 1 ? [el('span', { className: 'nx-more', textContent: `+${hidden.length - 1}` })] : []),
+      );
+      next.dataset.tone = sectionTone(nx.name);
+      next.dataset.key = nx.key;
+      box.append(next);
+    }
+  }
+  // 브리핑 중인 다음 파트가 NEXT 칸에 있으면 그 칸을 깜빡인다
+  const nextBox = box.querySelector('.seg-next');
+  if (nextBox) nextBox.classList.toggle('soon', briefKey !== null && nextBox.dataset.key === String(briefKey));
 }
 
 function setupScoreInput() {
@@ -938,7 +1089,7 @@ function setupScoreInput() {
     downY = e.clientY;
   });
   pages.addEventListener('pointerup', (e) => {
-    if (downX === null) return;
+    if (downX === null || ink.on) return; // 필기 중에는 탭으로 넘기지 않는다
     const dx = e.clientX - downX;
     const dy = e.clientY - downY;
     downX = null;
@@ -950,6 +1101,29 @@ function setupScoreInput() {
       turnPage(e.clientX - r.left < r.width * 0.4 ? -1 : 1);
     }
   });
+  // 필기
+  const setInk = (on) => {
+    ink.on = on;
+    $('score-pages').classList.toggle('inking', on);
+    $('ink-bar').classList.toggle('hidden', !on);
+    $('score-ink').classList.toggle('primary', on);
+    $('score-ink').classList.toggle('soft', !on);
+    if (on) toast('나만 보이는 필기예요. 페이지는 아래 화살표로 넘겨요');
+  };
+  $('score-ink').onclick = () => setInk(!ink.on);
+  $('ink-done').onclick = () => setInk(false);
+  $('ink-bar').querySelectorAll('.ink-tool').forEach((b) => {
+    b.onclick = () => {
+      ink.tool = b.dataset.tool;
+      if (b.dataset.color) ink.color = b.dataset.color;
+      $('ink-bar').querySelectorAll('.ink-tool').forEach((x) => x.classList.toggle('on', x === b));
+    };
+  });
+  $('ink-undo').onclick = () => { if (!undoInk()) toast('되돌릴 필기가 없어요'); };
+  $('ink-clear').onclick = () => {
+    if (confirm('지금 보이는 페이지의 내 필기를 모두 지울까요?')) clearVisibleInk();
+  };
+  addEventListener('resize', () => requestAnimationFrame(redrawInk));
   $('score-prev').onclick = () => turnPage(-1);
   $('score-next').onclick = () => turnPage(1);
   $('tab-score').onclick = openScore;
@@ -972,6 +1146,7 @@ function frame() {
   // 화면 오류가 나도 다음 프레임은 계속 그린다
   requestAnimationFrame(frame);
   if (app.state && !$('view-room').classList.contains('hidden')) {
+    checkLocalEnd();
     const pos = position();
     renderStage(pos);
     renderLivePanels(pos);
@@ -1014,7 +1189,7 @@ engine.onAudioState = (state) => {
   updateAudioGate();
 };
 
-let lastWake = 0;
+let lastWake = -Infinity;
 function wakeAudio() {
   // 방 안이면 오디오가 아직 없어도(새로고침 직후) 첫 탭에 켠다
   if ((!engine.ctx && !app.code) || engine.unlocked || performance.now() - lastWake < 400) return;
@@ -1371,6 +1546,16 @@ function joinRoom(code) {
 
 function togglePlay() {
   if (!engine.unlocked) engine.unlock().then(updateAudioGate, () => {});
+  if (!canControl()) {
+    // 멤버: 혼자 연습 (방 전체 재생 중에는 방장이 진행)
+    if (app.state.playback) return;
+    if (app.local) stopLocal();
+    else {
+      startLocal();
+      toast('혼자 연습 시작 · 나에게만 들려요');
+    }
+    return;
+  }
   if (app.state.playback) conn.send('stop');
   else conn.send('play', {});
 }

@@ -48,6 +48,8 @@ const ICONS = {
   tap: '<path d="M9 11V5a2 2 0 0 1 4 0v5"/><path d="M13 10V8a2 2 0 0 1 4 0v4"/><path d="M17 11a2 2 0 0 1 4 0v3a8 8 0 0 1-8 8h-1a8 8 0 0 1-6.5-3.3L3 15a2 2 0 0 1 3-2.6L9 15"/>',
   expand: '<path d="M8 3H5a2 2 0 0 0-2 2v3M21 8V5a2 2 0 0 0-2-2h-3M3 16v3a2 2 0 0 0 2 2h3M16 21h3a2 2 0 0 0 2-2v-3"/>',
   shrink: '<path d="M8 3v3a2 2 0 0 1-2 2H3M21 8h-3a2 2 0 0 1-2-2V3M3 16h3a2 2 0 0 1 2 2v3M16 21v-3a2 2 0 0 1 2-2h3"/>',
+  eraser: '<path d="m7 21-4.3-4.3a1 1 0 0 1 0-1.4l10-10a1 1 0 0 1 1.4 0l5.6 5.6a1 1 0 0 1 0 1.4L11 21z"/><path d="M22 21H7M5 11l9 9"/>',
+  undo: '<path d="M9 14 4 9l5-5"/><path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11"/>',
   home: '<path d="M3 10.5 12 3l9 7.5V20a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z"/>',
   user: '<circle cx="12" cy="8" r="4"/><path d="M4 21v-1a6 6 0 0 1 6-6h4a6 6 0 0 1 6 6v1"/>',
   door: '<path d="M14 3H6a1 1 0 0 0-1 1v17h14V8"/><path d="M14 3v5h5M3 21h18"/><circle cx="11" cy="13" r="1" fill="currentColor"/>',
@@ -129,7 +131,7 @@ export function buildFormStrip(container, song, opts) {
 export function updateFormStrip(container, current, progress, next) {
   let passed = current !== null && current !== undefined && current !== -1;
   let seen = false;
-  for (const seg of container.children) {
+  for (const seg of container.querySelectorAll('.seg')) {
     const key = seg.dataset.key;
     const isCur = passed && key === String(current);
     if (isCur) seen = true;
@@ -141,7 +143,7 @@ export function updateFormStrip(container, current, progress, next) {
   }
   if (passed && !seen) {
     // 현재 조각이 없으면(카운트인 등) 아무것도 지나지 않은 것으로
-    for (const seg of container.children) {
+    for (const seg of container.querySelectorAll('.seg')) {
       seg.classList.remove('done');
       seg.style.setProperty('--p', '0');
     }

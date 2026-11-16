@@ -421,7 +421,18 @@ input[type=number]::-webkit-inner-spin-button, input[type=number]::-webkit-outer
 .seg.next { box-shadow: 0 0 0 2.5px var(--warn); animation: pulse 0.5s ease-in-out infinite alternate; }
 .form-strip.slim { margin: 8px 0 14px; }
 .form-strip.slim .seg { height: 10px; border-radius: 5px; padding: 0; }
-.form-strip.compact .seg { height: 24px; font-size: 0.7rem; border-radius: 7px; padding: 0 6px; min-width: 18px; }
+.form-strip.compact { gap: 5px; align-items: stretch; }
+.form-strip.compact .seg { height: 34px; font-size: 0.92rem; border-radius: 10px; padding: 0 10px; flex: 1 1 0 !important; min-width: 0; }
+.form-strip.compact .seg-bars { opacity: 0.8; }
+.seg-next {
+  flex: none; display: flex; align-items: center; gap: 6px; padding: 0 12px; border-radius: 10px; min-width: 0; max-width: 40%;
+  border: 2px dashed color-mix(in srgb, var(--tone) 55%, white); color: color-mix(in srgb, var(--tone) 60%, var(--text)); font-weight: 800; font-size: 0.92rem;
+}
+.seg-next .nx-k { font-size: 0.66rem; letter-spacing: 0.08em; color: var(--muted); }
+.seg-next .nx-name { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.seg-next .nx-bars { opacity: 0.75; }
+.seg-next .nx-more { font-size: 0.72rem; color: var(--faint); }
+.seg-next.soon { border-style: solid; border-color: var(--warn); background: var(--warn-soft); animation: pulse 0.5s ease-in-out infinite alternate; }
 .form-strip.mini .seg { height: 5px; padding: 0; border-radius: 3px; }
 #ed-form { margin: 16px 0 4px; }
 #ed-form .seg { height: 14px; border-radius: 7px; padding: 0; }
@@ -705,9 +716,29 @@ dialog.sheet::backdrop { background: rgba(40, 32, 15, 0.42); }
   flex: 1; min-height: 0; display: flex; gap: 6px; justify-content: center; align-items: stretch;
   padding: 8px; touch-action: pan-y pinch-zoom; user-select: none; -webkit-user-select: none; cursor: pointer;
 }
-.score-pages img { flex: 1 1 0; min-width: 0; height: 100%; object-fit: contain; -webkit-user-drag: none; user-select: none; filter: drop-shadow(0 2px 6px rgba(60, 45, 10, 0.12)); }
-.score-pages.spread img:first-child { object-position: right center; }
-.score-pages.spread img:last-child { object-position: left center; }
+.score-pages .page { position: relative; flex: 1 1 0; min-width: 0; height: 100%; }
+.score-pages img { display: block; width: 100%; height: 100%; object-fit: contain; -webkit-user-drag: none; user-select: none; filter: drop-shadow(0 2px 6px rgba(60, 45, 10, 0.12)); }
+.score-pages.spread .page:first-child img { object-position: right center; }
+.score-pages.spread .page:last-child img { object-position: left center; }
+.ink-canvas { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
+.score-pages.inking { cursor: crosshair; touch-action: none; }
+.score-pages.inking .ink-canvas { pointer-events: auto; touch-action: none; }
+.score-right { display: flex; align-items: center; gap: 6px; }
+.ink-bar {
+  position: absolute; left: 50%; bottom: calc(14px + env(safe-area-inset-bottom)); transform: translateX(-50%); z-index: 5;
+  display: flex; align-items: center; gap: 6px; padding: 8px 10px; border-radius: 999px;
+  background: rgba(255, 255, 255, 0.97); box-shadow: var(--shadow); max-width: calc(100vw - 20px); overflow-x: auto;
+}
+.ink-label { font-size: 0.78rem; font-weight: 800; color: var(--muted); padding: 0 6px; white-space: nowrap; }
+.ink-tool, .ink-act {
+  display: grid; place-items: center; width: 40px; height: 40px; border-radius: 50%; border: 2px solid transparent;
+  background: var(--soft); cursor: pointer; flex: none; color: var(--text); font-size: 1.05rem;
+}
+.ink-tool.on { border-color: var(--primary); background: #fff; }
+.ink-tool .sw { width: 18px; height: 18px; border-radius: 50%; }
+.ink-tool .sw.marker { width: 22px; height: 12px; border-radius: 4px; background: #ffd23f; opacity: 0.8; }
+.ink-sep { width: 1.5px; height: 24px; background: var(--line-strong); flex: none; }
+.score-view:has(.ink-bar:not(.hidden)) .score-nav { bottom: calc(76px + env(safe-area-inset-bottom)); opacity: 1; }
 .score-empty { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; color: var(--muted); text-align: center; padding: 24px; font-weight: 700; }
 .score-empty .empty-ic { font-size: 2.6rem; color: var(--faint); margin-bottom: 10px; }
 .score-nav {
@@ -776,3 +807,8 @@ body:not(.device-voice) .device-only { display: none !important; }
 .fs-btn .ic-shrink { display: none; }
 .is-fullscreen .fs-btn .ic-expand { display: none; }
 .is-fullscreen .fs-btn .ic-shrink { display: inline-flex; }
+
+/* 혼자 연습 (멤버) */
+body:not(.drive) .drive-only { display: none !important; }
+.live-badge.solo { background: var(--t-verse); animation: none; }
+body.solo .stage-status::before { content: "나만 · "; color: var(--t-verse); font-weight: 800; }
