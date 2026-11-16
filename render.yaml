@@ -1,6 +1,6 @@
 services:
   - type: web
-    name: brief
+    name: echad
     runtime: node
     plan: free
     buildCommand: npm install
