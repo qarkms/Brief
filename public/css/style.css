@@ -855,7 +855,7 @@ body.solo .stage-status::before { content: "나만 · "; color: var(--t-verse); 
   display: flex; align-items: center; justify-content: center; gap: 8px; animation: splash-in 1s 0.4s ease-out both;
 }
 .splash-logo { height: 34px; width: auto; }
-.splash-name { font-size: 0.85rem; font-weight: 800; letter-spacing: 0.3em; color: #2f6f73; }
+.splash-name { height: 30px; width: auto; }
 @keyframes splash-in { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
 
 /* 홈 위쪽: 칸 없이 작게 */
