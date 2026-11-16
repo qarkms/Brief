@@ -1,7 +1,11 @@
 // 이 기기의 저장소: 보관함 곡(송폼+악보) · 셋리스트 · 내 방 목록
-import { makeId, normalizeSetlist, normalizeSong } from './timeline.js';
+import {
+  makeId, normalizeSetlist, normalizeSheets, normalizeSong,
+} from './timeline.js';
 
-const KEYS = { songs: 'brief.library', setlists: 'brief.setlists', rooms: 'brief.rooms' };
+const KEYS = {
+  songs: 'brief.library', setlists: 'brief.setlists', rooms: 'brief.rooms', mySheets: 'brief.mysheets', sheetPick: 'brief.sheetpick',
+};
 
 function read(key, fallback = []) {
   try {
@@ -109,4 +113,32 @@ export function importAll(data) {
   for (const s of songs) putSong(s);
   for (const sl of sets) putSetlist({ ...sl, id: sl.id || makeId() });
   return { songs: songs.length, setlists: sets.length };
+}
+
+// ---------- 내 악보 (나만 보는 개인 악보) ----------
+// 곡 제목으로 묶어서, 같은 곡이면 다른 방·셋리스트에서도 내 악보가 따라온다.
+export const songKey = (song) => String(song.title || '').toLowerCase().replace(/\s+/g, '');
+
+export function getMySheets(song) {
+  const all = read(KEYS.mySheets, {});
+  return normalizeSheets(all && typeof all === 'object' ? all[songKey(song)] : []);
+}
+
+export function setMySheets(song, pages) {
+  const all = read(KEYS.mySheets, {}) || {};
+  if (pages.length) all[songKey(song)] = pages;
+  else delete all[songKey(song)];
+  write(KEYS.mySheets, all);
+}
+
+/** 이 곡에서 공용 악보와 내 악보 중 무엇을 볼지 ('shared' | 'mine' | null=정하지 않음) */
+export function getSheetPick(song) {
+  const all = read(KEYS.sheetPick, {}) || {};
+  return all[songKey(song)] || null;
+}
+
+export function setSheetPick(song, pick) {
+  const all = read(KEYS.sheetPick, {}) || {};
+  all[songKey(song)] = pick;
+  write(KEYS.sheetPick, all);
 }

@@ -812,3 +812,19 @@ body:not(.device-voice) .device-only { display: none !important; }
 body:not(.drive) .drive-only { display: none !important; }
 .live-badge.solo { background: var(--t-verse); animation: none; }
 body.solo .stage-status::before { content: "나만 · "; color: var(--t-verse); font-weight: 800; }
+
+/* 공용 악보 / 내 악보 */
+.sheet-src {
+  display: flex; align-items: center; gap: 8px; padding: 6px 10px; flex-wrap: nowrap;
+  background: rgba(255, 255, 255, 0.7); border-bottom: 1px solid var(--line);
+}
+.src-toggle { display: inline-flex; gap: 3px; padding: 3px; background: var(--soft); border-radius: 999px; flex: none; }
+.src-toggle button {
+  border: none; background: none; padding: 7px 14px; border-radius: 999px; font-weight: 800; font-size: 0.85rem;
+  color: var(--muted); cursor: pointer; white-space: nowrap;
+}
+.src-toggle button small { font-size: 0.68rem; color: var(--t-verse); margin-left: 2px; }
+.src-toggle button.on { background: var(--surface); color: var(--text); box-shadow: var(--shadow-sm); }
+.sheet-src .hint { margin: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.sheet-src:not(.mine) .mine-only { display: none; }
+.score-empty .btn { margin: 14px 0 4px; }

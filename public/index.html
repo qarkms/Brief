@@ -204,11 +204,25 @@
       <div id="score-form" class="form-strip compact"></div>
       <div id="score-tools" class="score-tools hidden"></div>
     </div>
+    <!-- 공용 악보(방장이 올림) / 내 악보(나만 보임) -->
+    <div class="sheet-src">
+      <div class="src-toggle" id="src-toggle" role="tablist">
+        <button type="button" data-src="shared">공용 악보</button>
+        <button type="button" data-src="mine">내 악보 <small>나만</small></button>
+      </div>
+      <span id="my-sheet-status" class="hint"></span>
+      <span class="spacer"></span>
+      <label class="btn soft sm file-btn mine-only" for="my-sheet-file"><span data-icon="upload"></span>쪽 추가</label>
+      <button type="button" id="my-sheet-del" class="icon-btn sm mine-only" aria-label="내 악보 지우기"><span data-icon="trash"></span></button>
+      <input type="file" id="my-sheet-file" accept="image/*,application/pdf,.pdf" multiple hidden>
+    </div>
     <div id="score-pages" class="score-pages"></div>
     <div id="score-empty" class="score-empty hidden">
       <span data-icon="score" class="empty-ic"></span>
-      <p>이 곡에는 아직 악보가 없어요.</p>
-      <p class="hint ctl-only">곡 편집에서 이미지나 PDF 악보를 올릴 수 있어요.</p>
+      <p id="score-empty-msg">이 곡에는 아직 악보가 없어요.</p>
+      <p id="score-empty-hint" class="hint">곡 편집에서 이미지나 PDF 악보를 올릴 수 있어요.</p>
+      <label class="btn primary file-btn" for="my-sheet-file"><span data-icon="upload"></span>내 악보 올리기</label>
+      <p class="hint">내 악보는 이 기기에만 저장되고 나만 볼 수 있어요.</p>
     </div>
     <!-- 필기 도구 (나만 보임) -->
     <div id="ink-bar" class="ink-bar hidden">

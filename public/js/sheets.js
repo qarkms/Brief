@@ -140,8 +140,17 @@ export async function uploadSheetFile(file, { onProgress, ...auth } = {}) {
   return out;
 }
 
-/** 이미지 칸에 악보를 넣는다. 서버에 없으면 이 기기에 보관된 파일로 보여준다. */
-export function setSheetImg(img, id) {
+/**
+ * 이미지 칸에 악보를 넣는다. 서버에 없으면 이 기기에 보관된 파일로 보여준다.
+ * local: 내 악보처럼 서버에 올리지 않은 것은 처음부터 기기에서 읽는다.
+ */
+export function setSheetImg(img, id, { local = false } = {}) {
+  if (local) {
+    cacheGet(id).then((blob) => {
+      if (blob) img.src = URL.createObjectURL(blob);
+    });
+    return img;
+  }
   img.onerror = async () => {
     img.onerror = null;
     const blob = await cacheGet(id);

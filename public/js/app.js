@@ -6,7 +6,9 @@ import {
 import {
   bindStepper, countText, formatDuration, openEditor, setChoice, splitText,
 } from './editor.js';
-import { loadLibrary, loadSetlists, putSetlist, upsertRoom } from './library.js';
+import {
+  getMySheets, getSheetPick, loadLibrary, loadSetlists, putSetlist, setMySheets, setSheetPick, upsertRoom,
+} from './library.js';
 import {
   askName, initHome, onHomeHidden, onHomeShown, showHomeTab,
 } from './home.js';
@@ -961,8 +963,40 @@ function pagesPerView(sheets) {
   return sheets.length > 1 && innerWidth > innerHeight * 1.15 ? 2 : 1;
 }
 
+/**
+ * 이 곡에서 지금 보여줄 악보.
+ * 내 악보(이 기기에만, 나만 보임)가 있으면 그것부터, 없으면 방장이 올린 공용 악보.
+ * 곡마다 고른 쪽을 기억한다.
+ */
+function sheetView(song) {
+  const mine = getMySheets(song);
+  const pick = getSheetPick(song) || (mine.length ? 'mine' : 'shared');
+  return {
+    pick, mine, local: pick === 'mine', pages: pick === 'mine' ? mine : song.sheets,
+  };
+}
+
+function renderSheetSource(song, v) {
+  $('src-toggle').querySelectorAll('button').forEach((b) => b.classList.toggle('on', b.dataset.src === v.pick));
+  document.querySelector('.sheet-src').classList.toggle('mine', v.pick === 'mine');
+  $('my-sheet-del').classList.toggle('hidden', !v.mine.length);
+  let status = '';
+  if (v.pick === 'mine') status = v.mine.length ? `${v.mine.length}쪽 · 나만 보여요` : '';
+  else if (!song.sheets.length) status = '방장이 올린 악보 없음';
+  setText('my-sheet-status', status);
+  if (v.pick === 'mine') {
+    setText('score-empty-msg', '아직 이 곡의 내 악보가 없어요.');
+    setText('score-empty-hint', '이미지나 PDF를 올리면 나만 볼 수 있어요. 다른 방에서도 같은 제목의 곡이면 나와요.');
+  } else {
+    setText('score-empty-msg', '이 곡에는 아직 공용 악보가 없어요.');
+    setText('score-empty-hint', canControl() ? '곡 편집에서 올리면 모두가 볼 수 있어요. 나만 볼 악보는 아래에서 올리세요.' : '방장이 올리면 여기에 보여요. 나만 볼 악보를 직접 올릴 수도 있어요.');
+  }
+}
+
 function renderScorePages(song) {
-  const { sheets } = song;
+  const v = sheetView(song);
+  const sheets = v.pages;
+  renderSheetSource(song, v);
   const box = $('score-pages');
   const empty = !sheets.length;
   box.classList.toggle('hidden', empty);
@@ -978,7 +1012,7 @@ function renderScorePages(song) {
   const shown = sheets.slice(score.page, score.page + per);
   box.classList.toggle('spread', shown.length > 1);
   box.replaceChildren(...shown.map((p, i) => {
-    const img = setSheetImg(el('img', { alt: `${score.page + i + 1}쪽`, draggable: false, decoding: 'async' }), p.id);
+    const img = setSheetImg(el('img', { alt: `${score.page + i + 1}쪽`, draggable: false, decoding: 'async' }), p.id, { local: v.local });
     const page = el('div', { className: 'page' }, img);
     // 두 장 펼침이면 가운데로 모이게 (왼쪽 장은 오른쪽에, 오른쪽 장은 왼쪽에 붙임)
     const align = shown.length > 1 ? (i === 0 ? 'right' : 'left') : 'center';
@@ -987,23 +1021,25 @@ function renderScorePages(song) {
   }));
   const last = score.page + shown.length;
   setText('score-page', `${shown.length > 1 ? `${score.page + 1}–${last}` : score.page + 1} / ${sheets.length}`);
-  preload(sheets.slice(last, last + per));
+  if (!v.local) preload(sheets.slice(last, last + per));
 }
 
 function turnPage(dir) {
   if (!score.open || !app.state) return;
   const song = displaySongs()[score.songIndex];
-  if (!song || !song.sheets.length) return;
-  const per = pagesPerView(song.sheets);
+  const sheets = song ? sheetView(song).pages : [];
+  if (!sheets.length) return;
+  const per = pagesPerView(sheets);
   const page = score.page + dir * per;
-  if (page < 0 || page >= song.sheets.length) return;
+  if (page < 0 || page >= sheets.length) return;
   score.page = page;
   renderScorePages(song);
 }
 
 function renderScore(pos) {
   const { song } = pos;
-  const key = `${pos.songIndex}:${song.id}:${song.sheets.map((p) => p.id).join(',')}:${app.rev}`;
+  const v = sheetView(song);
+  const key = `${pos.songIndex}:${song.id}:${v.pick}:${v.pages.map((p) => p.id).join(',')}:${app.rev}`;
   if (score.key !== key) {
     // 곡이 바뀌면(자동 다음 곡 포함) 그 곡의 악보 첫 페이지로
     const songChanged = score.songIndex !== pos.songIndex;
@@ -1013,7 +1049,7 @@ function renderScore(pos) {
     setText('score-title', `${pos.songIndex + 1}. ${song.title}`);
     renderScorePages(song);
     const nextSong = displaySongs()[pos.songIndex + 1];
-    if (nextSong) preload(nextSong.sheets.slice(0, 2));
+    if (nextSong && sheetView(nextSong).pick === 'shared') preload(nextSong.sheets.slice(0, 2));
   }
 
   const bar = $('view-score').querySelector('.score-bar');
@@ -1124,6 +1160,46 @@ function setupScoreInput() {
     if (confirm('지금 보이는 페이지의 내 필기를 모두 지울까요?')) clearVisibleInk();
   };
   addEventListener('resize', () => requestAnimationFrame(redrawInk));
+  // 공용 악보 / 내 악보
+  const scoreSong = () => displaySongs()[score.songIndex];
+  $('src-toggle').addEventListener('click', (e) => {
+    const b = e.target.closest('button');
+    const song = scoreSong();
+    if (!b || !song) return;
+    setSheetPick(song, b.dataset.src);
+    score.page = 0;
+    score.key = null;
+  });
+  $('my-sheet-file').addEventListener('change', async (e) => {
+    const files = [...e.target.files];
+    e.target.value = '';
+    const song = scoreSong();
+    if (!files.length || !song) return;
+    const status = $('my-sheet-status');
+    try {
+      const pages = [...getMySheets(song)];
+      for (const file of files) {
+        // 서버에 올리지 않고 이 기기에만 보관 (나만 보임)
+        pages.push(...await uploadSheetFile(file, { onProgress: (m) => { status.textContent = m; } }));
+      }
+      setMySheets(song, pages);
+      setSheetPick(song, 'mine');
+      score.key = null;
+      toast(`내 악보 ${pages.length}쪽 · 나만 볼 수 있어요`);
+    } catch (err) {
+      toast(err.message || '악보를 넣지 못했어요');
+      score.key = null;
+    }
+  });
+  $('my-sheet-del').onclick = () => {
+    const song = scoreSong();
+    if (!song || !getMySheets(song).length) return;
+    if (!confirm(`"${song.title}"의 내 악보를 지울까요? (공용 악보는 그대로예요)`)) return;
+    setMySheets(song, []);
+    setSheetPick(song, 'shared');
+    score.page = 0;
+    score.key = null;
+  };
   $('score-prev').onclick = () => turnPage(-1);
   $('score-next').onclick = () => turnPage(1);
   $('tab-score').onclick = openScore;
