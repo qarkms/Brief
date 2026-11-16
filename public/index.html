@@ -6,23 +6,35 @@
   <meta name="theme-color" content="#fff9eb">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="mobile-web-app-capable" content="yes">
-  <meta name="apple-mobile-web-app-title" content="Brief">
+  <meta name="apple-mobile-web-app-title" content="ECHAD">
   <meta name="apple-mobile-web-app-status-bar-style" content="default">
-  <title>Brief — 밴드 메트로놈 & 브리핑</title>
+  <title>ECHAD — 밴드 메트로놈 & 브리핑</title>
   <link rel="manifest" href="manifest.webmanifest">
-  <link rel="icon" href="icon.svg" type="image/svg+xml">
+  <link rel="icon" href="icons/favicon-64.png" type="image/png" sizes="64x64">
   <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
   <link rel="icon" href="icons/icon-192.png" type="image/png" sizes="192x192">
   <link rel="preload" href="fonts/NanumSquareRoundB.woff2" as="font" type="font/woff2" crossorigin>
   <link rel="preload" href="fonts/NanumSquareRoundEB.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="preload" href="fonts/DancingScript-latin.woff2" as="font" type="font/woff2" crossorigin>
   <link rel="stylesheet" href="css/style.css">
 </head>
 <body>
+  <!-- ================= 시작 화면: 말씀 ================= -->
+  <div id="splash" class="splash" role="presentation">
+    <img src="icons/logo-512.png" alt="" class="splash-logo">
+    <p class="splash-name">ECHAD</p>
+    <figure class="verse">
+      <blockquote class="verse-ko">이 백성은 내가 나를 위하여 지었나니<br>나를 찬송하게 하려 함이니라</blockquote>
+      <p class="verse-en" lang="en">This people have I formed for myself;<br>they shall shew forth my praise.</p>
+      <figcaption class="verse-ref">사 43:21 · <span lang="en">Isaiah 43:21 KJV</span></figcaption>
+    </figure>
+  </div>
+
   <!-- ================= 홈 ================= -->
   <section id="view-home" class="view">
     <header class="home-top">
-      <img src="icon.svg" alt="" class="brand-mark sm">
-      <h1 class="wordmark sm">Brief</h1>
+      <img src="icons/logo-96.png" alt="" class="brand-mark sm">
+      <h1 class="wordmark sm">ECHAD</h1>
       <span class="spacer"></span>
       <button class="icon-btn fs-btn hidden" aria-label="전체 화면"><span data-icon="expand" class="ic-expand"></span><span data-icon="shrink" class="ic-shrink"></span></button>
       <button id="btn-home-settings" class="icon-btn" aria-label="내 기기 설정"><span data-icon="sliders"></span></button>
@@ -31,6 +43,11 @@
     <main class="home-main">
       <!-- 홈 -->
       <div id="tab-home" class="home-tab">
+        <figure class="verse verse-card">
+          <blockquote class="verse-ko">이 백성은 내가 나를 위하여 지었나니<br>나를 찬송하게 하려 함이니라</blockquote>
+          <p class="verse-en" lang="en">This people have I formed for myself; they shall shew forth my praise.</p>
+          <figcaption class="verse-ref">사 43:21 · <span lang="en">Isaiah 43:21 KJV</span></figcaption>
+        </figure>
         <button id="btn-hello" class="hello">
           <span class="hello-k">안녕하세요</span>
           <span class="hello-name"><b id="hello-name">이름을 정해 주세요</b><span data-icon="edit"></span></span>

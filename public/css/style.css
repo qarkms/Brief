@@ -3,6 +3,7 @@
 @font-face { font-family: "NanumSquareRound"; src: url("../fonts/NanumSquareRoundR.woff2") format("woff2"); font-weight: 400; font-display: swap; }
 @font-face { font-family: "NanumSquareRound"; src: url("../fonts/NanumSquareRoundB.woff2") format("woff2"); font-weight: 700; font-display: swap; }
 @font-face { font-family: "NanumSquareRound"; src: url("../fonts/NanumSquareRoundEB.woff2") format("woff2"); font-weight: 800; font-display: swap; }
+@font-face { font-family: "Dancing Script"; src: url("../fonts/DancingScript-latin.woff2") format("woff2"); font-weight: 400 700; font-display: swap; }
 
 /* ============ 디자인 토큰 ============ */
 :root {
@@ -216,10 +217,10 @@ input[type=number]::-webkit-inner-spin-button, input[type=number]::-webkit-outer
 
 /* ============ 홈 ============ */
 #view-home { min-height: 100dvh; }
-.brand-mark { width: 48px; height: 48px; border-radius: 15px; box-shadow: var(--shadow-sm); }
-.brand-mark.sm { width: 36px; height: 36px; border-radius: 11px; }
-.wordmark { font-size: 2.6rem; font-weight: 800; letter-spacing: -0.03em; }
-.wordmark.sm { font-size: 1.5rem; }
+.brand-mark { width: 48px; height: 48px; border-radius: 50%; }
+.brand-mark.sm { width: 40px; height: 40px; }
+.wordmark { font-size: 2.6rem; font-weight: 800; letter-spacing: 0.08em; }
+.wordmark.sm { font-size: 1.45rem; color: #2f6f73; }
 .home-top {
   position: sticky; top: 0; z-index: 10; display: flex; align-items: center; gap: 10px;
   padding: 10px 16px; background: rgba(255, 249, 235, 0.9); backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px);
@@ -828,3 +829,30 @@ body.solo .stage-status::before { content: "나만 · "; color: var(--t-verse); 
 .sheet-src .hint { margin: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
 .sheet-src:not(.mine) .mine-only { display: none; }
 .score-empty .btn { margin: 14px 0 4px; }
+
+/* ============ 말씀 (시작 화면 · 홈) ============ */
+.verse { margin: 0; text-align: center; }
+.verse-ko { margin: 0; font-weight: 800; color: var(--text); line-height: 1.6; word-break: keep-all; }
+.verse-en { margin: 8px 0 0; font-family: "Dancing Script", "Snell Roundhand", "Apple Chancery", cursive; font-weight: 500; color: #3f7f83; line-height: 1.35; }
+.verse-ref { margin-top: 10px; font-size: 0.78rem; font-weight: 700; color: var(--faint); letter-spacing: 0.04em; }
+
+.splash {
+  position: fixed; inset: 0; z-index: 200; display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 8px; padding: 32px 24px calc(32px + env(safe-area-inset-bottom)); background: #ffffff; cursor: pointer;
+  transition: opacity 0.6s ease;
+}
+.splash.leaving { opacity: 0; pointer-events: none; }
+.splash.gone { display: none; }
+.splash-logo { width: min(46vw, 230px); height: auto; animation: splash-in 0.9s ease-out both; }
+.splash-name { margin: 6px 0 22px; font-size: 1.5rem; font-weight: 800; letter-spacing: 0.35em; padding-left: 0.35em; color: #2f6f73; animation: splash-in 0.9s 0.15s ease-out both; }
+.splash .verse { max-width: 520px; animation: splash-in 1s 0.35s ease-out both; }
+.splash .verse-ko { font-size: clamp(1.05rem, 4.4vw, 1.35rem); }
+.splash .verse-en { font-size: clamp(1.1rem, 4.6vw, 1.45rem); }
+@keyframes splash-in { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
+
+.verse-card {
+  background: linear-gradient(180deg, #f2fafa, #ffffff); border: 1.5px solid #d4ebeb; border-radius: var(--radius);
+  box-shadow: var(--shadow-sm); padding: 18px 18px 14px; margin: 6px 0 4px;
+}
+.verse-card .verse-ko { font-size: 0.98rem; }
+.verse-card .verse-en { font-size: 1.08rem; }

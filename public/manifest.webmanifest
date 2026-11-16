@@ -1,17 +1,17 @@
 {
   "id": "./",
-  "name": "Brief — 밴드 메트로놈 & 브리핑",
-  "short_name": "Brief",
+  "name": "ECHAD — 밴드 메트로놈 & 브리핑",
+  "short_name": "ECHAD",
+  "description": "이 백성은 내가 나를 위하여 지었나니 나를 찬송하게 하려 함이니라 (사 43:21)",
   "start_url": "./",
   "scope": "./",
   "display": "standalone",
   "orientation": "any",
-  "background_color": "#fff9eb",
-  "theme_color": "#fff9eb",
+  "background_color": "#ffffff",
+  "theme_color": "#ffffff",
   "icons": [
     { "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
     { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
-    { "src": "icons/icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" },
-    { "src": "icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" }
+    { "src": "icons/icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
   ]
 }

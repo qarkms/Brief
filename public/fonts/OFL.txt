@@ -1,3 +1,7 @@
 NanumSquareRound (나눔스퀘어라운드)
 Copyright (c) 2010, NAVER Corporation (https://www.navercorp.com/)
 Licensed under the SIL Open Font License, Version 1.1 — https://openfontlicense.org
+
+Dancing Script
+Copyright 2016 The Dancing Script Project Authors (https://github.com/googlefonts/DancingScript)
+Licensed under the SIL Open Font License, Version 1.1 — https://openfontlicense.org

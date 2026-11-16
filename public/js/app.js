@@ -1667,7 +1667,7 @@ function bindRoom() {
   $('btn-share').onclick = async () => {
     const url = `${location.origin}${location.pathname}?room=${app.code}`;
     try {
-      if (navigator.share) await navigator.share({ title: 'Brief 방 초대', text: `방 코드 ${app.code}`, url });
+      if (navigator.share) await navigator.share({ title: 'ECHAD 방 초대', text: `방 코드 ${app.code}`, url });
       else {
         await navigator.clipboard.writeText(url);
         toast('초대 링크를 복사했어요');
@@ -1772,8 +1772,31 @@ function setupFullscreen() {
   document.addEventListener('webkitfullscreenchange', sync);
 }
 
+// ---------- 시작 화면 (말씀) ----------
+// 앱을 열 때마다 잠깐 보여주고 사라진다. 탭하면 바로 넘어간다.
+function setupSplash() {
+  const splash = $('splash');
+  const hide = () => {
+    if (splash.classList.contains('gone')) return;
+    splash.classList.add('leaving');
+    setTimeout(() => splash.classList.add('gone'), 600);
+  };
+  let seen = false;
+  try {
+    seen = sessionStorage.getItem('echad.splash') === '1';
+    sessionStorage.setItem('echad.splash', '1');
+  } catch { /* 저장 불가 */ }
+  if (seen) {
+    splash.classList.add('gone');
+    return;
+  }
+  splash.addEventListener('click', hide);
+  setTimeout(hide, 3200);
+}
+
 // ---------- 시작 ----------
 function boot() {
+  setupSplash();
   hydrateIcons();
   setupFullscreen();
   bindSettings();
