@@ -992,8 +992,56 @@ function releaseWakeLock() {
   wakeLock?.release();
   wakeLock = null;
 }
+// ---------- 소리가 꺼졌을 때 되살리기 ----------
+// 오래 백그라운드에 있다 돌아오거나 화면을 껐다 켜면 휴대폰이 오디오를 멈춘다.
+// 1) 탭 없이 다시 켜 보고  2) 안 되면 화면 아무 곳이나 탭할 때 되살리고  3) 그래도 꺼져 있으면 안내를 띄운다.
+function resumePlayback() {
+  const pb = app.state?.playback;
+  if (pb && app.plan && engine.unlocked && !engine.plan) engine.start(app.plan, pb.startAt);
+}
+
+function softResume() {
+  engine.tryResume().then(() => {
+    setTimeout(() => {
+      updateAudioGate();
+      resumePlayback();
+    }, 300);
+  });
+}
+
+engine.onAudioState = (state) => {
+  if (state !== 'running' && document.visibilityState === 'visible') softResume();
+  updateAudioGate();
+};
+
+let lastWake = 0;
+function wakeAudio() {
+  // 방 안이면 오디오가 아직 없어도(새로고침 직후) 첫 탭에 켠다
+  if ((!engine.ctx && !app.code) || engine.unlocked || performance.now() - lastWake < 400) return;
+  lastWake = performance.now();
+  engine.unlock().then(() => {
+    afterUnlock();
+    resumePlayback();
+  }, () => {});
+}
+// iPhone은 손가락을 뗄 때(touchend/pointerup)가 "사용자 동작"으로 인정된다
+for (const ev of ['pointerup', 'touchend', 'keydown']) document.addEventListener(ev, wakeAudio, true);
+
+setInterval(() => {
+  if (document.visibilityState !== 'visible' || !engine.ctx) return;
+  engine.checkHealth();
+  if (!engine.unlocked) softResume();
+  else {
+    updateAudioGate();
+    resumePlayback();
+  }
+}, 1500);
+
 document.addEventListener('visibilitychange', () => {
-  if (document.visibilityState === 'visible' && app.code) {
+  if (document.visibilityState !== 'visible') return;
+  engine.resetHealth();
+  softResume();
+  if (app.code) {
     requestWakeLock();
     updateAudioGate();
   }
@@ -1330,11 +1378,14 @@ function togglePlay() {
 function bindRoom() {
 
   $('btn-unlock').onclick = () => {
+    if (engine.unlocked) {
+      updateAudioGate();
+      return;
+    }
     engine.unlock().then(() => {
       afterUnlock();
-      const pb = app.state?.playback;
-      if (pb && app.plan) engine.start(app.plan, pb.startAt);
-    }, () => toast('오디오를 켤 수 없어요'));
+      resumePlayback();
+    }, () => toast('오디오를 켤 수 없어요. 앱을 닫았다가 다시 열어 주세요'));
   };
 
   $('btn-leave').onclick = () => {

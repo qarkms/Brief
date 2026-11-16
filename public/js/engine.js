@@ -95,20 +95,79 @@ export class Engine {
     this.synth = 'speechSynthesis' in window ? window.speechSynthesis : null;
   }
 
+  /** 소리를 낼 수 있는 상태인지 (켜져 있고, 오디오 시계가 실제로 흐르고 있는지) */
   get unlocked() {
-    return !!this.ctx && this.ctx.state === 'running';
+    return !!this.ctx && this.ctx.state === 'running' && !this.stuck;
+  }
+
+  #createContext() {
+    const AC = window.AudioContext || window.webkitAudioContext;
+    this.ctx = new AC({ latencyHint: 'interactive' });
+    this.out = this.ctx.createGain();
+    this.out.connect(this.ctx.destination);
+    this.voiceOut = this.ctx.createGain();
+    this.voiceOut.connect(this.ctx.destination);
+    this.noiseBuf = null;
+    this.stuck = false;
+    this.lastHealth = null;
+    const ctx = this.ctx;
+    ctx.onstatechange = () => {
+      if (ctx === this.ctx) this.onAudioState?.(ctx.state);
+    };
+  }
+
+  /**
+   * 오디오가 망가졌을 때 (오래 백그라운드에 있다 돌아오면 iOS에서 생김) 새로 만든다.
+   * 재생 중이었으면 소리가 다시 켜진 뒤 같은 박으로 이어간다.
+   */
+  #rebuild() {
+    const restart = this.plan ? { plan: this.plan, startAt: this.startAt } : null;
+    this.stop();
+    try {
+      this.ctx.close();
+    } catch { /* 이미 닫힘 */ }
+    this.#createContext();
+    this.voice = new VoiceBank();
+    this.countVoice = new VoiceBank();
+    this.pendingRestart = restart;
+  }
+
+  /** 탭 없이 다시 켜 보기 (안드로이드·PC는 대부분 이걸로 돌아온다) */
+  tryResume() {
+    if (!this.ctx || this.ctx.state === 'running' || this.ctx.state === 'closed') return Promise.resolve();
+    return this.ctx.resume().catch(() => {});
+  }
+
+  /**
+   * 주기적으로 호출: 켜져 있다는데 오디오 시계가 멈춰 있으면 소리가 안 나는 상태다.
+   * (iOS는 화면을 오래 껐다 켜면 running인데 소리가 안 나는 경우가 있다)
+   */
+  checkHealth() {
+    const ctx = this.ctx;
+    if (!ctx || ctx.state !== 'running') {
+      this.lastHealth = null;
+      return;
+    }
+    const now = performance.now();
+    const t = ctx.currentTime;
+    if (this.lastHealth && now - this.lastHealth.perf > 1000) {
+      const wasStuck = this.stuck;
+      this.stuck = t - this.lastHealth.t < 0.05;
+      if (this.stuck !== wasStuck) this.onAudioState?.(this.stuck ? 'stuck' : 'running');
+    }
+    this.lastHealth = { perf: now, t };
+  }
+
+  /** 화면이 숨겨졌던 동안의 측정은 버린다 */
+  resetHealth() {
+    this.lastHealth = null;
   }
 
   /** 반드시 사용자 탭 이벤트 안에서 호출 (iOS/안드로이드 오디오 정책). */
   unlock() {
-    if (!this.ctx) {
-      const AC = window.AudioContext || window.webkitAudioContext;
-      this.ctx = new AC({ latencyHint: 'interactive' });
-      this.out = this.ctx.createGain();
-      this.out.connect(this.ctx.destination);
-      this.voiceOut = this.ctx.createGain();
-      this.voiceOut.connect(this.ctx.destination);
-    }
+    const broken = this.ctx && (this.ctx.state === 'closed' || this.ctx.state === 'interrupted' || this.stuck);
+    if (broken) this.#rebuild();
+    else if (!this.ctx) this.#createContext();
     try {
       // iOS 무음 스위치가 켜져 있어도 소리가 나도록
       if (navigator.audioSession) navigator.audioSession.type = 'playback';
@@ -126,7 +185,13 @@ export class Engine {
     }
     this.loadVoice();
     this.loadCountVoice();
-    return resumed;
+    return resumed.then(() => {
+      this.stuck = false;
+      this.lastHealth = null;
+      const r = this.pendingRestart;
+      this.pendingRestart = null;
+      if (r && !this.plan) this.start(r.plan, r.startAt);
+    });
   }
 
   loadVoice() {
