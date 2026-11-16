@@ -7,7 +7,7 @@ import {
   bindStepper, countText, formatDuration, openEditor, setChoice, splitText,
 } from './editor.js';
 import {
-  getMySheets, getSheetPick, loadLibrary, loadSetlists, putSetlist, setMySheets, setSheetPick, upsertRoom,
+  getMySheets, getSheetPick, loadLibrary, loadRooms, loadSetlists, putSetlist, setMySheets, setSheetPick, upsertRoom,
 } from './library.js';
 import {
   askName, initHome, onHomeHidden, onHomeShown, showHomeTab,
@@ -143,7 +143,7 @@ conn.addEventListener('open', () => {
   } else if (app.code) {
     // 재접속: 같은 방으로 다시 들어간다
     conn.send('join', {
-      code: app.code, name: myName(), hostToken: hostTokenFor(app.code), key: clientKey,
+      code: app.code, name: myName(), hostToken: hostTokenFor(app.code), key: clientKey, revive: reviveFor(app.code),
     });
   }
 });
@@ -233,8 +233,9 @@ function onState(state) {
   $('room-name').textContent = state.title;
   if (document.activeElement !== $('room-title-input')) $('room-title-input').value = state.title;
   // 홈의 "내 방" 목록에 기억 (방장·부방장은 닫힌 방을 다시 열 수 있게 셋리스트도)
+  // revive: 서버가 방을 잃어도 이 기기에서 같은 코드로 되살릴 수 있는 사본 (방장이 아니어도)
   upsertRoom({
-    code: state.code, title: state.title, role: me()?.role || 'member', ...(ctl ? { setlist: state.setlist } : {}),
+    code: state.code, title: state.title, role: me()?.role || 'member', setlist: state.setlist, ...(state.revive ? { revive: state.revive } : {}),
   });
 
   $('member-count').textContent = state.members.length;
@@ -1613,10 +1614,13 @@ function createRoom({
   });
 }
 
+/** 이 기기에 저장된 방 사본 (예전에 들어갔던 방) */
+const reviveFor = (code) => loadRooms().find((r) => r.code === code)?.revive || null;
+
 function joinRoom(code) {
   requireName(() => {
     app.code = code;
-    enterWithAudio('join', { code, hostToken: hostTokenFor(code) });
+    enterWithAudio('join', { code, hostToken: hostTokenFor(code), revive: reviveFor(code) });
   });
 }
 

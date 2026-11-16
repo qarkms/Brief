@@ -103,7 +103,7 @@ function renderRooms() {
       ];
     } else if (roomStatus.loaded) {
       cls = 'closed';
-      line = [host ? '닫힌 방 · 눌러서 다시 열기' : '닫힌 방 · 방장이 다시 열면 들어갈 수 있어요'];
+      line = [host || r.revive ? '잠든 방 · 눌러서 다시 열기' : '닫힌 방 · 방장이 다시 열면 들어갈 수 있어요'];
     } else {
       line = [ago(r.lastVisited)];
     }
@@ -143,6 +143,9 @@ function enterSavedRoom(r, st) {
     api.createRoom({
       code: r.code, hostToken, title: r.title, setlist: r.setlist || [],
     });
+  } else if (r.revive) {
+    // 멤버도 이 기기에 저장된 사본으로 같은 코드의 방을 다시 연다 (방장은 들어오면 방장 그대로)
+    api.joinRoom(r.code);
   } else {
     api.toast('닫힌 방이에요. 방장이 다시 열면 들어갈 수 있어요');
   }

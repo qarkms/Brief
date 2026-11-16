@@ -25,14 +25,23 @@ const toInt = (v, max, fallback) => {
 
 const CLIENT_KEY = /^[a-f0-9]{32}$/;
 export const cleanKey = (k) => (typeof k === 'string' && CLIENT_KEY.test(k) ? k : null);
+const HASH = /^[a-f0-9]{64}$/;
+/** 비밀값(방장 토큰·기기 키)의 지문. 멤버 기기에 저장해도 원래 값은 알 수 없다. */
+export const hashSecret = (v) => crypto.createHash('sha256').update(String(v)).digest('hex');
 
 export class Room {
-  constructor(code, setlist, onChange = () => {}, { hostToken, title } = {}) {
+  constructor(code, setlist, onChange = () => {}, {
+    hostToken, hostTokenHash, coHostHashes, title,
+  } = {}) {
     this.code = code;
     this.title = cleanTitle(title) || `방 ${code}`;
-    this.hostToken = typeof hostToken === 'string' && TOKEN.test(hostToken) ? hostToken : token();
+    if (typeof hostToken === 'string' && TOKEN.test(hostToken)) this.hostToken = hostToken;
+    else if (typeof hostTokenHash === 'string' && HASH.test(hostTokenHash)) this.hostToken = null; // 멤버가 되살린 방: 방장이 오면 지문으로 확인
+    else this.hostToken = token();
+    this.hostTokenHash = this.hostToken ? hashSecret(this.hostToken) : hostTokenHash;
     this.hostId = null;
-    this.coHostKeys = new Set(); // 부방장 (기기 키 기준이라 재접속해도 유지)
+    // 부방장: 기기 키의 지문으로 기억 (재접속·방 되살리기에도 유지)
+    this.coHostKeys = new Set((Array.isArray(coHostHashes) ? coHostHashes : []).filter((h) => HASH.test(h)));
     this.setlist = normalizeSetlist(setlist);
     if (!this.setlist.length) this.setlist = [demoSong()];
     this.autoAdvance = true;
@@ -47,8 +56,12 @@ export class Room {
   }
 
   addMember(client, name, hostToken, key = null) {
-    const isHost = typeof hostToken === 'string' && hostToken === this.hostToken;
-    if (isHost) this.hostId = client.id;
+    const isHost = typeof hostToken === 'string' && TOKEN.test(hostToken)
+      && (hostToken === this.hostToken || (!this.hostToken && hashSecret(hostToken) === this.hostTokenHash));
+    if (isHost) {
+      this.hostId = client.id;
+      this.hostToken = hostToken; // 되살린 방이면 이때 방장 토큰을 다시 알게 된다
+    }
     this.members.set(client.id, { client, name, key: cleanKey(key) });
     this.emptySince = null;
     return isHost;
@@ -66,7 +79,7 @@ export class Room {
 
   isCoHost(id) {
     const m = this.members.get(id);
-    return !!(m && m.key && this.coHostKeys.has(m.key));
+    return !!(m && m.key && this.coHostKeys.has(hashSecret(m.key)));
   }
 
   /** 방장 또는 부방장: 곡 편집·시작·정지·실시간 송폼 변경 가능 */
@@ -78,14 +91,14 @@ export class Room {
     const k = cleanKey(key);
     if (!k) return false;
     const host = this.members.get(this.hostId);
-    return this.coHostKeys.has(k) || (!!host && host.key === k);
+    return this.coHostKeys.has(hashSecret(k)) || (!!host && host.key === k);
   }
 
   setCoHost(memberId, on) {
     const m = this.members.get(memberId);
     if (!m || !m.key || memberId === this.hostId) return false;
-    if (on) this.coHostKeys.add(m.key);
-    else this.coHostKeys.delete(m.key);
+    if (on) this.coHostKeys.add(hashSecret(m.key));
+    else this.coHostKeys.delete(hashSecret(m.key));
     return true;
   }
 
@@ -93,10 +106,11 @@ export class Room {
     const target = this.members.get(toId);
     if (!target) return null;
     const old = this.members.get(this.hostId);
-    if (target.key) this.coHostKeys.delete(target.key);
-    if (old && old.key) this.coHostKeys.add(old.key); // 이전 방장은 부방장으로
+    if (target.key) this.coHostKeys.delete(hashSecret(target.key));
+    if (old && old.key) this.coHostKeys.add(hashSecret(old.key)); // 이전 방장은 부방장으로
     this.hostId = toId;
     this.hostToken = token();
+    this.hostTokenHash = hashSecret(this.hostToken);
     return this.hostToken;
   }
 
@@ -208,6 +222,7 @@ export class Room {
       code: this.code,
       title: this.title,
       hostToken: this.hostToken,
+      hostTokenHash: this.hostTokenHash,
       coHostKeys: [...this.coHostKeys],
       setlist: this.setlist,
       autoAdvance: this.autoAdvance,
@@ -219,7 +234,11 @@ export class Room {
 
   static restore(data, onChange) {
     const room = new Room(data.code, data.setlist, onChange, data);
-    for (const k of data.coHostKeys || []) if (cleanKey(k)) room.coHostKeys.add(k);
+    // 예전 저장 파일은 기기 키를 그대로 저장했다 → 지문으로 바꿔 둔다
+    for (const k of data.coHostKeys || []) {
+      if (HASH.test(k)) room.coHostKeys.add(k);
+      else if (cleanKey(k)) room.coHostKeys.add(hashSecret(k));
+    }
     room.updateSettings(data);
     room.select(data.selectedSong ?? 0, 0);
     room.emptySince = Number(data.lastActive) || Date.now();
@@ -240,10 +259,26 @@ export class Room {
     };
   }
 
+  /**
+   * 멤버 기기에 저장해 둘 방 사본. 서버가 방을 잃어도(무료 서버 재시작 등) 멤버가 코드로 들어오면 되살린다.
+   * 방장 토큰·기기 키는 지문만 들어 있어 사본으로 방장 행세를 할 수 없다.
+   */
+  reviveData() {
+    return {
+      title: this.title,
+      setlist: this.setlist,
+      hostTokenHash: this.hostTokenHash,
+      coHostHashes: [...this.coHostKeys],
+      autoAdvance: this.autoAdvance,
+      gapSeconds: this.gapSeconds,
+    };
+  }
+
   publicState() {
     return {
       code: this.code,
       title: this.title,
+      revive: this.reviveData(),
       hostId: this.hostId,
       setlist: this.setlist,
       autoAdvance: this.autoAdvance,
@@ -318,11 +353,17 @@ export class RoomManager {
   }
 
   /** code·hostToken을 주면 그 코드로 방을 다시 연다 (방장이 닫힌 방을 다시 열 때) */
-  create(setlist, { code, hostToken, title } = {}) {
+  create(setlist, {
+    code, hostToken, hostTokenHash, coHostHashes, title,
+  } = {}) {
     const wanted = typeof code === 'string' ? code.trim().toUpperCase() : '';
     const useCode = ROOM_CODE.test(wanted) && !this.rooms.has(wanted) ? wanted : this.newCode();
+    const same = useCode === wanted;
     const room = new Room(useCode, setlist, this.onChange, {
-      hostToken: useCode === wanted ? hostToken : null, title,
+      hostToken: same ? hostToken : null,
+      hostTokenHash: same ? hostTokenHash : null,
+      coHostHashes: same ? coHostHashes : null,
+      title,
     });
     this.rooms.set(room.code, room);
     this.save();

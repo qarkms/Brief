@@ -3,7 +3,7 @@ import http from 'node:http';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { WebSocketServer } from 'ws';
-import { cleanTitle, RoomManager } from './rooms.js';
+import { cleanTitle, ROOM_CODE, RoomManager } from './rooms.js';
 import { MAX_SHEET_BYTES, SheetStore } from './sheets.js';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -285,9 +285,17 @@ export function createServer({ dataDir = process.env.DATA_DIR || path.resolve('d
         return;
       }
       case 'join': {
-        const room = rooms.get(msg.code);
+        let room = rooms.get(msg.code);
+        // 서버가 방을 잃었으면(무료 서버 재시작 등) 들어오는 사람의 기기에 저장된 사본으로 되살린다
+        const rv = msg.revive;
+        if (!room && rv && typeof rv === 'object' && ROOM_CODE.test(String(msg.code || '').trim().toUpperCase())) {
+          room = rooms.create(rv.setlist, {
+            code: msg.code, hostTokenHash: rv.hostTokenHash, coHostHashes: rv.coHostHashes, title: rv.title,
+          });
+          room.updateSettings(rv);
+        }
         if (!room) {
-          send(client.ws, { type: 'error', code: 'ROOM_NOT_FOUND', message: '방을 찾을 수 없어요.' });
+          send(client.ws, { type: 'error', code: 'ROOM_NOT_FOUND', message: '방을 찾을 수 없어요. 처음 들어가는 방이면 방장이 앱에서 방을 한 번 열어 주세요.' });
           return;
         }
         enter(client, room, msg, msg.hostToken);

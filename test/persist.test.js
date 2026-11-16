@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
-import { RoomManager } from '../server/rooms.js';
+import { hashSecret, RoomManager } from '../server/rooms.js';
 import { createServer } from '../server/index.js';
 
 test('방은 디스크에 저장되어 서버를 다시 켜도 남는다', () => {
@@ -21,7 +21,8 @@ test('방은 디스크에 저장되어 서버를 다시 켜도 남는다', () =>
   assert.equal(back.hostToken, room.hostToken);
   assert.equal(back.setlist[0].title, '주 은혜임을');
   assert.equal(back.gapSeconds, 7);
-  assert.ok(back.coHostKeys.has('e'.repeat(32)));
+  // 부방장은 기기 키의 지문으로 기억한다
+  assert.ok(back.coHostKeys.has(hashSecret('e'.repeat(32))));
   assert.equal(back.playback, null);
   fs.rmSync(dir, { recursive: true, force: true });
 });

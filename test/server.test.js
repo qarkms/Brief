@@ -12,7 +12,9 @@ let http;
 const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'brief-test-'));
 
 before(async () => {
-  ({ server } = createServer({ dataDir }));
+  const made = createServer({ dataDir });
+  ({ server } = made);
+  globalThis.__briefServer = made;
   await new Promise((r) => server.listen(0, r));
   url = `ws://127.0.0.1:${server.address().port}/ws`;
   http = `http://127.0.0.1:${server.address().port}`;
@@ -186,4 +188,61 @@ test('링크 미리보기: 접속 주소로 og:image 전체 주소를 채운다'
   const bad = await (await fetch(`${http}/`, { headers: { 'x-forwarded-host': 'x"><script>' } })).text();
   assert.ok(!bad.includes('<script>"'));
   assert.match(bad, /og:image" content="\/icons\//);
+});
+
+test('서버가 방을 잃어도 멤버가 코드로 들어오면 기기의 사본으로 되살리고, 방장·부방장은 그대로', async () => {
+  // 1) 방장이 방을 만들고, 멤버(부방장)가 들어와서 방 사본을 받는다
+  const host = client();
+  await host.open;
+  host.send('create', { name: 'H', key: '1'.repeat(32), title: '청년부', setlist: [{ title: '주 은혜임을' }] });
+  const { code, hostToken } = await host.next(isType('joined'));
+  const co = client();
+  await co.open;
+  co.send('join', { code, name: 'C', key: '2'.repeat(32) });
+  const { you } = await co.next(isType('joined'));
+  host.send('cohost', { to: you, on: true });
+  const st = await co.next((m) => m.type === 'state' && m.state.members.find((x) => x.id === you)?.role === 'cohost');
+  const { revive } = st.state;
+  assert.ok(!JSON.stringify(revive).includes(hostToken), '사본에 방장 토큰 원문은 없다');
+  assert.ok(!JSON.stringify(revive).includes('2'.repeat(32)), '사본에 기기 키 원문은 없다');
+  host.close();
+  co.close();
+  await new Promise((r) => setTimeout(r, 100));
+
+  // 2) 서버가 방을 잃음 (무료 서버 재시작 흉내)
+  const code2 = `${code}`;
+  const { rooms } = globalThis.__briefServer;
+  rooms.rooms.delete(code2);
+
+  // 3) 다른 멤버가 사본 없이 들어오면 실패
+  const m1 = client();
+  await m1.open;
+  m1.send('join', { code: code2, name: 'X' });
+  assert.equal((await m1.next(isType('error'))).code, 'ROOM_NOT_FOUND');
+
+  // 4) 사본이 있는 멤버가 들어오면 같은 코드로 되살아난다
+  const m2 = client();
+  await m2.open;
+  m2.send('join', { code: code2, name: 'M', key: '3'.repeat(32), revive });
+  const j = await m2.next(isType('joined'));
+  assert.equal(j.code, code2);
+  assert.equal(j.hostToken, null, '멤버는 방장이 되지 않는다');
+  const s2 = await m2.next(isType('state'));
+  assert.equal(s2.state.title, '청년부');
+  assert.equal(s2.state.setlist[0].title, '주 은혜임을');
+
+  // 5) 원래 방장이 토큰으로 들어오면 방장, 부방장도 그대로
+  const h2 = client();
+  await h2.open;
+  h2.send('join', { code: code2, name: 'H', key: '1'.repeat(32), hostToken });
+  const hj = await h2.next(isType('joined'));
+  assert.equal(hj.hostToken, hostToken);
+  const c2 = client();
+  await c2.open;
+  c2.send('join', { code: code2, name: 'C', key: '2'.repeat(32) });
+  const cj = await c2.next(isType('joined'));
+  const s3 = await c2.next((m) => m.type === 'state' && m.state.members.length === 3);
+  assert.equal(s3.state.members.find((x) => x.id === cj.you).role, 'cohost');
+  assert.equal(s3.state.hostId, hj.you);
+  for (const c of [m1, m2, h2, c2]) c.close();
 });
