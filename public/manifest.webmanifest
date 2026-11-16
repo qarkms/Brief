@@ -10,8 +10,8 @@
   "background_color": "#fff9eb",
   "theme_color": "#fff9eb",
   "icons": [
-    { "src": "icons/echad-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
-    { "src": "icons/echad-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
-    { "src": "icons/echad-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+    { "src": "icons/app-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "icons/app-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "icons/app-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
   ]
 }

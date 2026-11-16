@@ -217,8 +217,8 @@ input[type=number]::-webkit-inner-spin-button, input[type=number]::-webkit-outer
 
 /* ============ 홈 ============ */
 #view-home { min-height: 100dvh; }
-.brand-mark { width: 48px; height: 48px; border-radius: 50%; }
-.brand-mark.sm { width: 40px; height: 40px; }
+.brand-mark { height: 48px; width: auto; }
+.brand-mark.sm { height: 38px; }
 .wordmark { font-size: 2.6rem; font-weight: 800; letter-spacing: 0.08em; }
 .wordmark.sm { font-size: 1.45rem; color: #2f6f73; }
 .home-top {
@@ -852,7 +852,7 @@ body.solo .stage-status::before { content: "나만 · "; color: var(--t-verse); 
   position: absolute; left: 0; right: 0; bottom: calc(28px + env(safe-area-inset-bottom));
   display: flex; align-items: center; justify-content: center; gap: 8px; animation: splash-in 1s 0.4s ease-out both;
 }
-.splash-logo { width: 30px; height: 30px; }
+.splash-logo { height: 34px; width: auto; }
 .splash-name { font-size: 0.85rem; font-weight: 800; letter-spacing: 0.3em; color: #2f6f73; }
 @keyframes splash-in { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
 
