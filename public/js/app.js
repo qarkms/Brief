@@ -1436,9 +1436,34 @@ function bindRoom() {
   liveObserver.observe($('dlg-live'), { attributes: true, attributeFilter: ['open'] });
 }
 
+// ---------- 전체 화면 (브라우저로 열었을 때 주소창·아래 바 숨기기) ----------
+function setupFullscreen() {
+  const standalone = matchMedia('(display-mode: standalone)').matches || matchMedia('(display-mode: fullscreen)').matches || navigator.standalone;
+  const root = document.documentElement;
+  const enabled = document.fullscreenEnabled || document.webkitFullscreenEnabled;
+  // 홈 화면 앱으로 열었거나, iPhone 사파리처럼 지원하지 않으면 버튼을 숨긴다
+  if (standalone || !enabled) return;
+  const current = () => document.fullscreenElement || document.webkitFullscreenElement;
+  const sync = () => document.body.classList.toggle('is-fullscreen', !!current());
+  document.querySelectorAll('.fs-btn').forEach((b) => {
+    b.classList.remove('hidden');
+    b.onclick = async () => {
+      try {
+        if (current()) await (document.exitFullscreen || document.webkitExitFullscreen).call(document);
+        else await (root.requestFullscreen || root.webkitRequestFullscreen).call(root, { navigationUI: 'hide' });
+      } catch {
+        toast('이 브라우저에서는 전체 화면을 쓸 수 없어요');
+      }
+    };
+  });
+  document.addEventListener('fullscreenchange', sync);
+  document.addEventListener('webkitfullscreenchange', sync);
+}
+
 // ---------- 시작 ----------
 function boot() {
   hydrateIcons();
+  setupFullscreen();
   bindSettings();
   bindRoom();
   setupScoreInput();

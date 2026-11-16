@@ -5,11 +5,14 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <meta name="theme-color" content="#fff9eb">
   <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-title" content="Brief">
   <meta name="apple-mobile-web-app-status-bar-style" content="default">
   <title>Brief — 밴드 메트로놈 & 브리핑</title>
   <link rel="manifest" href="manifest.webmanifest">
   <link rel="icon" href="icon.svg" type="image/svg+xml">
-  <link rel="apple-touch-icon" href="icon.svg">
+  <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+  <link rel="icon" href="icons/icon-192.png" type="image/png" sizes="192x192">
   <link rel="preload" href="fonts/NanumSquareRoundB.woff2" as="font" type="font/woff2" crossorigin>
   <link rel="preload" href="fonts/NanumSquareRoundEB.woff2" as="font" type="font/woff2" crossorigin>
   <link rel="stylesheet" href="css/style.css">
@@ -21,6 +24,7 @@
       <img src="icon.svg" alt="" class="brand-mark sm">
       <h1 class="wordmark sm">Brief</h1>
       <span class="spacer"></span>
+      <button class="icon-btn fs-btn hidden" aria-label="전체 화면"><span data-icon="expand" class="ic-expand"></span><span data-icon="shrink" class="ic-shrink"></span></button>
       <button id="btn-home-settings" class="icon-btn" aria-label="내 기기 설정"><span data-icon="sliders"></span></button>
     </header>
 
@@ -123,6 +127,7 @@
         <span id="conn-status" class="live-dot" aria-hidden="true"></span>
       </button>
       <span class="spacer"></span>
+      <button class="icon-btn fs-btn hidden" aria-label="전체 화면"><span data-icon="expand" class="ic-expand"></span><span data-icon="shrink" class="ic-shrink"></span></button>
       <button id="btn-members" class="icon-btn with-count" aria-label="참가자"><span data-icon="users"></span><span id="member-count">0</span></button>
       <button id="btn-settings" class="icon-btn" aria-label="내 기기 설정"><span data-icon="sliders"></span></button>
     </header>

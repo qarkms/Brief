@@ -771,3 +771,8 @@ body:not(.device-voice) .device-only { display: none !important; }
   width: min(460px, calc(100vw - 24px)); background: var(--surface); border-radius: var(--radius-md); box-shadow: var(--shadow);
   padding: 14px 16px; display: flex; flex-direction: column; gap: 10px; font-weight: 800;
 }
+
+/* 전체 화면 버튼 (브라우저로 열었을 때, 지원하는 기기에서만 보임) */
+.fs-btn .ic-shrink { display: none; }
+.is-fullscreen .fs-btn .ic-expand { display: none; }
+.is-fullscreen .fs-btn .ic-shrink { display: inline-flex; }
