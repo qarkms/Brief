@@ -59,7 +59,31 @@ function serveStatic(req, res, pathname) {
     res.writeHead(403).end();
     return;
   }
+  if (path.basename(file) === 'index.html') {
+    serveIndex(req, res, file);
+    return;
+  }
   serveFile(res, file);
+}
+
+/**
+ * 카카오톡 등 링크 미리보기는 그림 주소를 전체 주소(https://도메인/...)로 요구한다.
+ * 페이지를 보낼 때 지금 접속한 주소를 채워 넣는다 (onrender.com이든 개인 도메인이든).
+ */
+function serveIndex(req, res, file) {
+  fs.readFile(file, 'utf8', (err, html) => {
+    if (err) {
+      res.writeHead(404, { 'content-type': 'text/plain' }).end('Not found');
+      return;
+    }
+    const host = String(req.headers['x-forwarded-host'] || req.headers.host || '').split(',')[0].trim();
+    const proto = String(req.headers['x-forwarded-proto'] || 'http').split(',')[0].trim() === 'https' ? 'https' : 'http';
+    const origin = /^[a-z0-9.-]+(:\d+)?$/i.test(host) ? `${proto}://${host}` : '';
+    res.writeHead(200, {
+      'content-type': 'text/html; charset=utf-8',
+      'cache-control': 'no-cache',
+    }).end(html.replaceAll('__ORIGIN__', origin));
+  });
 }
 
 const LIVE_ERRORS = {
