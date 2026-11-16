@@ -180,7 +180,7 @@ test('부방장은 시작할 수 있지만 다른 사람을 임명할 수는 없
 
 test('링크 미리보기: 접속 주소로 og:image 전체 주소를 채운다', async () => {
   const page = await (await fetch(`${http}/?room=ABCD`, { headers: { 'x-forwarded-proto': 'https', 'x-forwarded-host': 'echad.onrender.com' } })).text();
-  assert.match(page, /<meta property="og:image" content="https:\/\/echad\.onrender\.com\/icons\/share-echad-v2-1200x630\.png">/);
+  assert.match(page, /<meta property="og:image" content="https:\/\/echad\.onrender\.com\/icons\/share-echad-v3-1200x630\.png">/);
   assert.ok(!page.includes('__ORIGIN__'));
   // 이상한 주소는 넣지 않는다
   const bad = await (await fetch(`${http}/`, { headers: { 'x-forwarded-host': 'x"><script>' } })).text();
