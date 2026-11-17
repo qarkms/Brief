@@ -233,6 +233,7 @@ export function createServer({ dataDir = process.env.DATA_DIR || path.resolve('d
       hostToken: isHost ? room.hostToken : null,
     });
     broadcast(room);
+    rooms.save(); // 참가자 목록(이름·마지막 접속)도 저장
   };
 
   const hostActions = {
@@ -262,7 +263,10 @@ export function createServer({ dataDir = process.env.DATA_DIR || path.resolve('d
       if (err) send(client.ws, { type: 'error', code: err, message: LIVE_ERRORS[err] || '송폼을 바꿀 수 없어요.' });
     },
     owner_cohost(room, msg) {
-      room.setCoHost(msg.to, !!msg.on);
+      room.setCoHost(msg.to, !!msg.on, msg.uid);
+    },
+    owner_forget(room, msg) {
+      room.forget(msg.uid);
     },
     owner_transfer(room, msg, client) {
       const newToken = room.transferHost(msg.to);
@@ -312,7 +316,7 @@ export function createServer({ dataDir = process.env.DATA_DIR || path.resolve('d
       default: {
         // owner_* 는 방장만, 나머지는 방장·부방장
         if (msg.type.startsWith('owner_')) return;
-        const ownerOnly = ['cohost', 'transfer'].includes(msg.type);
+        const ownerOnly = ['cohost', 'transfer', 'forget'].includes(msg.type);
         const action = hostActions[ownerOnly ? `owner_${msg.type}` : msg.type];
         const room = client.room;
         if (!action || !room) return;

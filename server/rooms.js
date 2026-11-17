@@ -10,6 +10,8 @@ import {
 export const START_LEAD_MS = 1500;
 // 아무도 없는 방은 이 기간이 지나면 지운다 (방장은 같은 코드로 다시 열 수 있다)
 const EMPTY_ROOM_TTL_MS = 14 * 24 * 60 * 60 * 1000;
+const ROSTER_MAX = 100;
+const uidOf = (hash) => hash.slice(0, 16);
 const CODE_CHARS = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
 export const ROOM_CODE = /^[ABCDEFGHJKLMNPQRSTUVWXYZ23456789]{4}$/;
 const TOKEN = /^[a-f0-9]{32}$/;
@@ -31,7 +33,7 @@ export const hashSecret = (v) => crypto.createHash('sha256').update(String(v)).d
 
 export class Room {
   constructor(code, setlist, onChange = () => {}, {
-    hostToken, hostTokenHash, coHostHashes, title,
+    hostToken, hostTokenHash, coHostHashes, title, roster, hostKeyHash,
   } = {}) {
     this.code = code;
     this.title = cleanTitle(title) || `방 ${code}`;
@@ -50,6 +52,14 @@ export class Room {
     this.selectedSection = 0;
     this.playback = null;
     this.members = new Map();
+    // 한 번이라도 들어온 사람 (기기 키 지문 → 이름·마지막 접속). 접속을 끊어도 참가자 목록에 남는다
+    this.roster = new Map();
+    for (const r of Array.isArray(roster) ? roster : []) {
+      if (r && HASH.test(r.h)) {
+        this.roster.set(r.h, { name: String(r.name || '멤버').slice(0, 24), joinedAt: Number(r.joinedAt) || 0, lastSeen: Number(r.lastSeen) || 0 });
+      }
+    }
+    this.hostKeyHash = typeof hostKeyHash === 'string' && HASH.test(hostKeyHash) ? hostKeyHash : null;
     this.emptySince = null;
     this.endTimer = null;
     this.onChange = onChange;
@@ -62,12 +72,46 @@ export class Room {
       this.hostId = client.id;
       this.hostToken = hostToken; // 되살린 방이면 이때 방장 토큰을 다시 알게 된다
     }
-    this.members.set(client.id, { client, name, key: cleanKey(key) });
+    const k = cleanKey(key);
+    this.members.set(client.id, { client, name, key: k });
+    if (k) {
+      const h = hashSecret(k);
+      const now = Date.now();
+      const prev = this.roster.get(h);
+      this.roster.delete(h);
+      this.roster.set(h, { name, joinedAt: prev?.joinedAt || now, lastSeen: now });
+      if (isHost) this.hostKeyHash = h;
+      this.#trimRoster();
+    }
     this.emptySince = null;
     return isHost;
   }
 
+  /** 너무 많이 쌓이면 오래 안 온 사람부터 목록에서 뺀다 (지금 접속 중인 사람·방장은 남긴다) */
+  #trimRoster() {
+    if (this.roster.size <= ROSTER_MAX) return;
+    const online = new Set([...this.members.values()].filter((m) => m.key).map((m) => hashSecret(m.key)));
+    const old = [...this.roster.entries()]
+      .filter(([h]) => !online.has(h) && h !== this.hostKeyHash)
+      .sort((a, b) => a[1].lastSeen - b[1].lastSeen);
+    while (this.roster.size > ROSTER_MAX && old.length) this.roster.delete(old.shift()[0]);
+  }
+
+  /** 참가자 목록의 사람 → 기기 키 지문 (접속 중이면 접속 id로, 아니면 목록 uid로 찾는다) */
+  #hashFor(id, uid) {
+    const m = id ? this.members.get(id) : null;
+    if (m) return m.key ? hashSecret(m.key) : null;
+    if (typeof uid !== 'string' || !/^[0-9a-f]{16}$/.test(uid)) return null;
+    for (const h of this.roster.keys()) if (uidOf(h) === uid) return h;
+    return null;
+  }
+
   removeMember(id) {
+    const m = this.members.get(id);
+    if (m?.key) {
+      const r = this.roster.get(hashSecret(m.key));
+      if (r) r.lastSeen = Date.now();
+    }
     this.members.delete(id);
     // hostId는 유지: 방장이 재접속하면 hostToken으로 권한을 되찾는다.
     if (!this.members.size) this.emptySince = Date.now();
@@ -94,11 +138,23 @@ export class Room {
     return this.coHostKeys.has(hashSecret(k)) || (!!host && host.key === k);
   }
 
-  setCoHost(memberId, on) {
-    const m = this.members.get(memberId);
-    if (!m || !m.key || memberId === this.hostId) return false;
-    if (on) this.coHostKeys.add(hashSecret(m.key));
-    else this.coHostKeys.delete(hashSecret(m.key));
+  /** 부방장 임명·해제: 접속 중이 아닌 사람도 목록에 있으면 된다 */
+  setCoHost(memberId, on, uid = null) {
+    if (memberId && memberId === this.hostId) return false;
+    const h = this.#hashFor(memberId, uid);
+    if (!h || h === this.hostKeyHash) return false;
+    if (on) this.coHostKeys.add(h);
+    else this.coHostKeys.delete(h);
+    return true;
+  }
+
+  /** 접속 중이 아닌 사람을 참가자 목록에서 뺀다 (부방장이었으면 그것도 해제) */
+  forget(uid) {
+    const h = this.#hashFor(null, uid);
+    if (!h || h === this.hostKeyHash) return false;
+    if ([...this.members.values()].some((m) => m.key && hashSecret(m.key) === h)) return false;
+    this.roster.delete(h);
+    this.coHostKeys.delete(h);
     return true;
   }
 
@@ -109,6 +165,7 @@ export class Room {
     if (target.key) this.coHostKeys.delete(hashSecret(target.key));
     if (old && old.key) this.coHostKeys.add(hashSecret(old.key)); // 이전 방장은 부방장으로
     this.hostId = toId;
+    this.hostKeyHash = target.key ? hashSecret(target.key) : null;
     this.hostToken = token();
     this.hostTokenHash = hashSecret(this.hostToken);
     return this.hostToken;
@@ -224,6 +281,8 @@ export class Room {
       hostToken: this.hostToken,
       hostTokenHash: this.hostTokenHash,
       coHostKeys: [...this.coHostKeys],
+      hostKeyHash: this.hostKeyHash,
+      roster: [...this.roster.entries()].map(([h, r]) => ({ h, ...r })),
       setlist: this.setlist,
       autoAdvance: this.autoAdvance,
       gapSeconds: this.gapSeconds,
@@ -286,12 +345,44 @@ export class Room {
       selectedSong: this.selectedSong,
       selectedSection: this.selectedSection,
       playback: this.playback,
-      members: [...this.members.entries()].map(([id, m]) => ({
-        id,
-        name: m.name,
-        role: id === this.hostId ? 'host' : this.isCoHost(id) ? 'cohost' : 'member',
-      })),
+      members: this.memberList(),
     };
+  }
+
+  /**
+   * 참가자 목록: 한 번이라도 들어온 사람 모두 + 지금 접속 중인지.
+   * 같은 기기로 여러 창을 열었으면 한 사람으로 묶는다(ids).
+   */
+  memberList() {
+    const roleOf = (h, id) => {
+      if ((id && id === this.hostId) || (!id && h && h === this.hostKeyHash)) return 'host';
+      return h && this.coHostKeys.has(h) ? 'cohost' : 'member';
+    };
+    const list = [];
+    const byHash = new Map();
+    for (const [id, m] of this.members) {
+      const h = m.key ? hashSecret(m.key) : null;
+      const same = h && byHash.get(h);
+      if (same) {
+        same.ids.push(id);
+        if (id === this.hostId) { same.role = 'host'; same.id = id; }
+        continue;
+      }
+      const entry = {
+        id, ids: [id], uid: h ? uidOf(h) : null, name: m.name, online: true, lastSeen: null, role: roleOf(h, id),
+      };
+      if (h) byHash.set(h, entry);
+      list.push(entry);
+    }
+    const offline = [...this.roster.entries()]
+      .filter(([h]) => !byHash.has(h))
+      .sort((a, b) => b[1].lastSeen - a[1].lastSeen)
+      .map(([h, r]) => ({
+        id: null, ids: [], uid: uidOf(h), name: r.name, online: false, lastSeen: r.lastSeen, role: roleOf(h, null),
+      }));
+    const rank = { host: 0, cohost: 1, member: 2 };
+    list.sort((a, b) => rank[a.role] - rank[b.role]);
+    return [...list, ...offline];
   }
 
   dispose() {

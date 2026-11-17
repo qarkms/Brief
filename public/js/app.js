@@ -68,7 +68,7 @@ const app = {
   pendingOnOpen: null,
 };
 
-const me = () => app.state?.members.find((m) => m.id === app.me);
+const me = () => app.state?.members.find((m) => m.id === app.me || m.ids?.includes(app.me));
 const isOwner = () => !!app.state && app.state.hostId === app.me;
 const canControl = () => isOwner() || me()?.role === 'cohost';
 const hostTokenFor = (code) => store.get(`brief.host.${code}`, null);
@@ -238,7 +238,9 @@ function onState(state) {
     code: state.code, title: state.title, role: me()?.role || 'member', setlist: state.setlist, ...(state.revive ? { revive: state.revive } : {}),
   });
 
-  $('member-count').textContent = state.members.length;
+  // 지금 접속 중인 사람 수 / 참가자 전체
+  const onlineCount = state.members.filter((m) => m.online !== false).length;
+  $('member-count').textContent = onlineCount === state.members.length ? onlineCount : `${onlineCount}/${state.members.length}`;
   renderMembers();
   if ($('dlg-setlist').open) renderSetlist();
   renderOptions();
@@ -480,34 +482,71 @@ function stepSong(dir) {
 }
 
 // ---------- 참가자 ----------
+/** "방금 전", "5분 전", "3시간 전", "2일 전" */
+function agoText(t) {
+  if (!t) return '';
+  const min = Math.floor((Date.now() - t) / 60000);
+  if (min < 1) return '방금 전';
+  if (min < 60) return `${min}분 전`;
+  const h = Math.floor(min / 60);
+  if (h < 24) return `${h}시간 전`;
+  const d = Math.floor(h / 24);
+  return d < 30 ? `${d}일 전` : `${Math.floor(d / 30)}달 전`;
+}
+
+/** 한 번이라도 들어온 사람은 모두 보이고, 지금 접속 중인지 함께 표시한다 */
 function renderMembers() {
   const owner = isOwner();
-  $('member-list').replaceChildren(...app.state.members.map((m) => {
+  const mine = me();
+  const list = app.state.members;
+  const onlineCount = list.filter((m) => m.online !== false).length;
+  $('member-summary').textContent = `${list.length}명 · 지금 접속 중 ${onlineCount}명`;
+  $('member-list').replaceChildren(...list.map((m) => {
+    const online = m.online !== false;
+    const isMe = m === mine;
+    const status = el(
+      'span',
+      { className: `presence${online ? ' on' : ''}` },
+      el('i', { className: 'dot' }),
+      online ? '접속 중' : `마지막 접속 ${agoText(m.lastSeen)}`.trim(),
+    );
     const li = el(
       'li',
-      {},
+      { className: online ? '' : 'offline' },
       el('span', { className: 'avatar', textContent: [...m.name][0] || '?' }),
-      el('span', { className: 'name', textContent: m.name }),
+      el('span', { className: 'who' }, el('span', { className: 'name', textContent: m.name }), status),
     );
     if (m.role === 'host') li.append(el('span', { className: 'badge' }, icon('crown'), '방장'));
     if (m.role === 'cohost') li.append(el('span', { className: 'badge co' }, icon('userCheck'), '부방장'));
-    if (m.id === app.me) li.append(el('span', { className: 'badge me', textContent: '나' }));
-    if (owner && m.id !== app.me) {
+    if (isMe) li.append(el('span', { className: 'badge me', textContent: '나' }));
+    if (owner && !isMe && m.role !== 'host' && (m.uid || m.id)) {
       const check = el('input', { type: 'checkbox', checked: m.role === 'cohost' });
-      check.onchange = () => conn.send('cohost', { to: m.id, on: check.checked });
-      li.append(el(
+      check.onchange = () => conn.send('cohost', { to: m.id, uid: m.uid, on: check.checked });
+      const acts = el(
         'div',
         { className: 'member-acts' },
         el('label', { className: 'toggle' }, el('span', { textContent: '부방장으로 임명' }), check, el('span', { className: 'toggle-ui' })),
-        el('button', {
+      );
+      if (online) {
+        acts.append(el('button', {
           type: 'button',
           className: 'btn ghost sm',
           textContent: '방장 넘기기',
           onclick: () => {
             if (confirm(`${m.name}님에게 방장을 넘길까요? 나는 부방장이 돼요.`)) conn.send('transfer', { to: m.id });
           },
-        }),
-      ));
+        }));
+      } else if (m.uid) {
+        acts.append(el('button', {
+          type: 'button',
+          className: 'btn ghost sm',
+          textContent: '목록에서 빼기',
+          onclick: () => {
+            if (confirm(`${m.name}님을 참가자 목록에서 뺄까요? 다시 들어오면 목록에 다시 올라와요.`)) conn.send('forget', { uid: m.uid });
+          },
+        }));
+      }
+      li.append(acts);
     }
     return li;
   }));
@@ -1710,7 +1749,10 @@ function bindRoom() {
     } catch { /* 취소 */ }
   };
 
-  $('btn-members').onclick = () => $('dlg-members').showModal();
+  $('btn-members').onclick = () => {
+    renderMembers(); // "N분 전"을 새로
+    $('dlg-members').showModal();
+  };
   $('btn-settings').onclick = () => $('dlg-settings').showModal();
   $('pill-volume').onclick = () => $('dlg-settings').showModal();
   $('pill-voice').onclick = () => $('dlg-settings').showModal();
