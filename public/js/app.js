@@ -1777,25 +1777,39 @@ function setupFullscreen() {
 }
 
 // ---------- 시작 화면 (말씀) ----------
-// 앱을 열 때마다 잠깐 보여주고 사라진다. 탭하면 바로 넘어간다.
+// 앱을 열 때마다, 그리고 다른 앱에 갔다가 돌아올 때마다 잠깐 보여주고 사라진다. 탭하면 바로 넘어간다.
+// (재생 중에 돌아올 때만은 악보·곡 구조를 가리지 않도록 띄우지 않는다)
 function setupSplash() {
   const splash = $('splash');
+  let timer = 0;
+  let hiddenAt = 0;
   const hide = () => {
-    if (splash.classList.contains('gone')) return;
+    clearTimeout(timer);
+    if (splash.classList.contains('gone') || splash.classList.contains('leaving')) return;
     splash.classList.add('leaving');
-    setTimeout(() => splash.classList.add('gone'), 600);
+    timer = setTimeout(() => splash.classList.add('gone'), 600);
   };
-  let seen = false;
-  try {
-    seen = sessionStorage.getItem('echad.splash') === '1';
-    sessionStorage.setItem('echad.splash', '1');
-  } catch { /* 저장 불가 */ }
-  if (seen) {
-    splash.classList.add('gone');
-    return;
-  }
+  const show = () => {
+    clearTimeout(timer);
+    splash.classList.remove('gone', 'leaving');
+    // 글자가 다시 천천히 떠오르도록 애니메이션을 처음부터
+    for (const el of splash.querySelectorAll('.verse, .splash-brand')) {
+      el.style.animation = 'none';
+      void el.offsetWidth;
+      el.style.animation = '';
+    }
+    timer = setTimeout(hide, 3200);
+  };
   splash.addEventListener('click', hide);
-  setTimeout(hide, 3200);
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'hidden') {
+      hiddenAt = Date.now();
+      return;
+    }
+    if (hiddenAt && Date.now() - hiddenAt > 1000 && !activePb()) show();
+    hiddenAt = 0;
+  });
+  show();
 }
 
 // ---------- 시작 ----------
