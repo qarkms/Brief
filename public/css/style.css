@@ -427,10 +427,15 @@ input[type=number]::-webkit-inner-spin-button, input[type=number]::-webkit-outer
 .form-strip.compact { gap: 5px; align-items: stretch; }
 .form-strip.compact .seg { height: 34px; font-size: 0.92rem; border-radius: 10px; padding: 0 10px; flex: 1 1 0 !important; min-width: 0; }
 .form-strip.compact .seg-bars { opacity: 0.8; }
+.form-strip.compact.all { overflow-x: auto; scrollbar-width: none; -webkit-overflow-scrolling: touch; }
+.form-strip.compact.all::-webkit-scrollbar { display: none; }
+.form-strip.compact.all .seg { flex: 1 0 104px !important; }
 .seg-next {
   flex: none; display: flex; align-items: center; gap: 6px; padding: 0 12px; border-radius: 10px; min-width: 0; max-width: 40%;
   border: 2px dashed color-mix(in srgb, var(--tone) 55%, white); color: color-mix(in srgb, var(--tone) 60%, var(--text)); font-weight: 800; font-size: 0.92rem;
 }
+#score-form [data-section] { cursor: pointer; transition: transform 0.12s ease, filter 0.12s ease; }
+#score-form [data-section]:active { transform: scale(0.96); filter: brightness(0.93); }
 .seg-next .nx-k { font-size: 0.66rem; letter-spacing: 0.08em; color: var(--muted); }
 .seg-next .nx-name { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
 .seg-next .nx-bars { opacity: 0.75; }

@@ -1088,15 +1088,20 @@ function renderScoreForm(pos, briefKey) {
   const width = box.clientWidth || innerWidth - 24;
   // 한 칸에 이름·마디가 다 보이도록 약 110px, NEXT 칸 자리 남기기
   const per = Math.max(2, Math.min(6, Math.floor((width - 130) / 110)));
+  // 정지 중에는 모든 파트를 보여 준다(눌러서 거기부터 시작). 많으면 옆으로 밀어서 본다
+  const idle = pos.mode === 'idle';
   let start = 0;
   if (pos.mode === 'play' && pos.seq >= 0) start = Math.max(0, segs.findIndex((s) => s.key === pos.seq));
-  else if (pos.mode === 'idle') start = Math.max(0, segs.findIndex((s) => s.key === pos.sectionIndex));
-  const shown = segs.slice(start, start + per);
-  const hidden = segs.slice(start + per);
-  const key = `${pos.songIndex}:${app.playId}:${app.rev}:${start}:${per}:${segs.map((s) => s.key).join(',')}`;
+  const shown = idle ? segs : segs.slice(start, start + per);
+  const hidden = idle ? [] : segs.slice(start + per);
+  const key = `${pos.songIndex}:${app.playId}:${app.rev}:${idle}:${start}:${per}:${segs.map((s) => s.key).join(',')}`;
   if (box.dataset.wkey !== key) {
     box.dataset.wkey = key;
+    box.classList.toggle('all', idle);
     buildStrip(box, shown);
+    box.scrollLeft = 0;
+    box.dataset.song = pos.songIndex;
+    shown.forEach((sg, k) => { box.children[k].dataset.section = sg.sectionIndex; });
     if (hidden.length) {
       const nx = hidden[0];
       const next = el(
@@ -1109,6 +1114,7 @@ function renderScoreForm(pos, briefKey) {
       );
       next.dataset.tone = sectionTone(nx.name);
       next.dataset.key = nx.key;
+      next.dataset.section = nx.sectionIndex;
       box.append(next);
     }
   }
@@ -1117,7 +1123,32 @@ function renderScoreForm(pos, briefKey) {
   if (nextBox) nextBox.classList.toggle('soon', briefKey !== null && nextBox.dataset.key === String(briefKey));
 }
 
+/** 악보 위 송폼 칸을 누르면 그 파트부터 시작 (방장·부방장은 방 전체, 멤버는 혼자 연습) */
+function startFromScorePart(songIndex, sectionIndex) {
+  if (!app.state || !app.state.setlist[songIndex]) return;
+  const name = app.state.setlist[songIndex].sections[sectionIndex]?.name ?? '';
+  if (canControl()) {
+    // 합주 중 실수로 눌러 모두의 재생이 끊기지 않도록, 재생 중에는 한 번 묻는다
+    if (app.state.playback && !confirm(`모두 "${name}"부터 다시 시작할까요?`)) return;
+    if (!engine.unlocked) engine.unlock().then(updateAudioGate, () => {});
+    conn.send('play', { songIndex, sectionIndex });
+  } else if (app.state.playback) {
+    toast('방장이 재생 중일 때는 방장 화면을 따라가요');
+  } else {
+    if (!engine.unlocked) engine.unlock().then(updateAudioGate, () => {});
+    app.localSel = { song: songIndex, section: sectionIndex };
+    startLocal(songIndex, sectionIndex);
+    toast(`${name}부터 혼자 연습 · 나에게만 들려요`);
+  }
+}
+
 function setupScoreInput() {
+  $('score-form').addEventListener('click', (e) => {
+    const part = e.target.closest('[data-section]');
+    const box = $('score-form');
+    if (!part || box.dataset.song === undefined) return;
+    startFromScorePart(Number(box.dataset.song), Number(part.dataset.section));
+  });
   const pages = $('score-pages');
   let downX = null;
   let downY = null;
