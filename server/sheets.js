@@ -8,15 +8,17 @@ const MAX_ROOM_BYTES = 400 * 1024 * 1024;
 
 // 악보 이미지 저장소. 방이 사라지면 그 방의 악보도 지운다.
 // 목록(index.json)을 함께 저장해서 서버를 다시 켜도 남는다.
+// remote(Supabase)가 있으면 그림·목록을 거기에도 올리고, 서버 디스크에 없는 그림은 처음 볼 때 내려받는다.
 export class SheetStore {
-  constructor(dir) {
+  constructor(dir, { remote = null } = {}) {
     this.dir = dir;
+    this.remote = remote;
     this.index = new Map(); // id -> { room, type, size }
     fs.mkdirSync(dir, { recursive: true });
     try {
       const saved = JSON.parse(fs.readFileSync(this.indexFile(), 'utf8'));
       for (const [id, meta] of Object.entries(saved)) {
-        if (SHEET_ID.test(id) && fs.existsSync(this.file(id))) this.index.set(id, meta);
+        if (SHEET_ID.test(id) && (remote || fs.existsSync(this.file(id)))) this.index.set(id, meta);
       }
     } catch { /* 처음 */ }
     // 목록에 없는 파일 정리
@@ -30,9 +32,25 @@ export class SheetStore {
   }
 
   saveIndex() {
+    const json = JSON.stringify(Object.fromEntries(this.index));
     try {
-      fs.writeFileSync(this.indexFile(), JSON.stringify(Object.fromEntries(this.index)));
+      fs.writeFileSync(this.indexFile(), json);
     } catch { /* 무시 */ }
+    this.remote?.putLatest('sheets/index.json', json);
+  }
+
+  /** 서버 디스크에 그림이 없으면 바깥 저장소에서 내려받는다. 있으면 true */
+  async ensureLocal(id) {
+    if (fs.existsSync(this.file(id))) return true;
+    if (!this.remote || !this.index.has(id)) return false;
+    try {
+      const got = await this.remote.get(`sheets/${id}`);
+      if (!got) return false;
+      fs.writeFileSync(this.file(id), got.buf);
+      return true;
+    } catch {
+      return false;
+    }
   }
 
   file(id) {
@@ -54,6 +72,7 @@ export class SheetStore {
     if (this.roomBytes(room) - (existing ? existing.size : 0) + buf.length > MAX_ROOM_BYTES) return 'ROOM_FULL';
     fs.writeFileSync(this.file(id), buf);
     this.index.set(id, { room, type, size: buf.length });
+    this.remote?.putLatest(`sheets/${id}`, buf, type);
     this.saveIndex();
     return null;
   }
@@ -63,11 +82,14 @@ export class SheetStore {
   }
 
   removeRoom(room) {
+    const gone = [];
     for (const [id, meta] of this.index) {
       if (meta.room !== room) continue;
       this.index.delete(id);
+      gone.push(`sheets/${id}`);
       fs.rm(this.file(id), { force: true }, () => {});
     }
+    this.remote?.remove(gone).catch(() => {});
     this.saveIndex();
   }
 }

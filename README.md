@@ -71,6 +71,15 @@ npm start          # http://localhost:3000
 합주실 밖에서도 쓰려면 Render, Railway, Fly.io 같은 Node.js 호스팅에 올리면 됩니다
 (시작 명령 `npm start`, WebSocket 지원 필요). 화면 꺼짐 방지 등 일부 기능은 HTTPS에서만 동작합니다.
 
+### 무료 서버에서 방·악보 오래 보관하기
+
+- **잠들지 않게:** Render 무료 서버는 15분 동안 접속이 없으면 잠듭니다. UptimeRobot, cron-job.org 같은 무료 서비스로
+  `https://<주소>/healthz` 를 5분마다 열게 하면 깨어 있습니다.
+- **Supabase에 함께 저장:** 서버 환경변수에 `SUPABASE_URL`(Project URL)과 `SUPABASE_SERVICE_KEY`(secret 키 또는 service_role 키)를
+  넣으면 방(`rooms.json`)과 악보가 Supabase Storage의 비공개 버킷 `echad`(`SUPABASE_BUCKET`로 변경 가능)에도 저장됩니다.
+  서버 디스크가 지워져도 켜질 때 방을 다시 가져오고, 악보는 처음 열 때 내려받습니다. 버킷은 처음 켤 때 자동으로 만들어지며,
+  무료 프로젝트가 일시정지되지 않도록 서버가 6시간마다 가볍게 접속합니다. 환경변수가 없으면 서버 디스크만 사용합니다.
+
 ## 사용법
 
 1. 방장이 이름을 입력하고 **새 방 만들기** → 상단의 방 코드를 눌러 초대 링크 공유.

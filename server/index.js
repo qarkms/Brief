@@ -5,6 +5,7 @@ import { fileURLToPath } from 'node:url';
 import { WebSocketServer } from 'ws';
 import { cleanTitle, ROOM_CODE, RoomManager } from './rooms.js';
 import { MAX_SHEET_BYTES, SheetStore } from './sheets.js';
+import { RemoteStore } from './remote.js';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const PUBLIC_DIR = path.join(ROOT, 'public');
@@ -119,8 +120,8 @@ function readBody(req, limit) {
   });
 }
 
-export function createServer({ dataDir = process.env.DATA_DIR || path.resolve('data') } = {}) {
-  const sheets = new SheetStore(path.join(dataDir, 'sheets'));
+export function createServer({ dataDir = process.env.DATA_DIR || path.resolve('data'), remote = null } = {}) {
+  const sheets = new SheetStore(path.join(dataDir, 'sheets'), { remote });
 
   // PUT /api/sheets/:id?room=CODE  (x-host-token 헤더 필요) — 방장만 업로드
   async function uploadSheet(req, res, id, url) {
@@ -140,9 +141,10 @@ export function createServer({ dataDir = process.env.DATA_DIR || path.resolve('d
     return json(res, 200, { ok: true });
   }
 
-  function serveSheet(req, res, id) {
+  async function serveSheet(req, res, id) {
     const meta = sheets.get(id);
-    if (!meta) {
+    // 서버가 새로 켜져 디스크에 없으면 바깥 저장소에서 가져온다
+    if (!meta || (req.method === 'GET' && !(await sheets.ensureLocal(id)))) {
       res.writeHead(404).end();
       return;
     }
@@ -204,7 +206,10 @@ export function createServer({ dataDir = process.env.DATA_DIR || path.resolve('d
   const rooms = new RoomManager((room) => {
     broadcast(room);
     rooms.save();
-  }, (code) => sheets.removeRoom(code), { file: path.join(dataDir, 'rooms.json') });
+  }, (code) => sheets.removeRoom(code), {
+    file: path.join(dataDir, 'rooms.json'),
+    onSaved: remote ? (json) => remote.putLatest('rooms.json', json) : null,
+  });
   const sweeper = setInterval(() => rooms.sweep(), 60 * 1000);
   sweeper.unref();
 
@@ -358,13 +363,48 @@ export function createServer({ dataDir = process.env.DATA_DIR || path.resolve('d
     for (const room of rooms.rooms.values()) room.dispose();
   });
 
-  return { server, wss, rooms };
+  return {
+    server, wss, rooms, sheets,
+  };
+}
+
+/**
+ * 바깥 저장소(Supabase)가 설정돼 있으면, 서버를 켤 때 방 목록·악보 목록을 먼저 내려받는다.
+ * (악보 그림은 처음 볼 때 하나씩 내려받는다)
+ */
+export async function pullRemote(remote, dataDir) {
+  await remote.ensureBucket();
+  const rooms = await remote.pull('rooms.json', path.join(dataDir, 'rooms.json'));
+  const sheets = await remote.pull('sheets/index.json', path.join(dataDir, 'sheets', 'index.json'));
+  return { rooms, sheets };
 }
 
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   const port = Number(process.env.PORT) || 3000;
-  const { server } = createServer();
+  const dataDir = process.env.DATA_DIR || path.resolve('data');
+  const remote = RemoteStore.fromEnv();
+  if (remote) {
+    try {
+      const got = await pullRemote(remote, dataDir);
+      console.log(`Supabase 저장소 사용 중 (방 ${got.rooms ? '불러옴' : '없음'}, 악보 목록 ${got.sheets ? '불러옴' : '없음'})`);
+    } catch (e) {
+      console.error('Supabase에서 불러오지 못했어요. 서버 디스크만 사용합니다:', e.message);
+    }
+    // 무료 프로젝트가 일시정지되지 않도록 6시간마다 가볍게 접속
+    setInterval(() => remote.touch(), 6 * 60 * 60 * 1000).unref();
+  } else {
+    console.log('Supabase 설정이 없어 서버 디스크에만 저장합니다 (SUPABASE_URL, SUPABASE_SERVICE_KEY)');
+  }
+  const { server, rooms } = createServer({ dataDir, remote });
   server.listen(port, () => {
-    console.log(`Brief 서버 실행 중: http://localhost:${port}`);
+    console.log(`ECHAD 서버 실행 중: http://localhost:${port}`);
   });
+  // Render가 서버를 끄기 직전(SIGTERM)에 마지막 내용을 저장
+  const shutdown = async () => {
+    rooms.saveNow();
+    await Promise.race([remote ? remote.flush() : null, new Promise((r) => setTimeout(r, 8000))]);
+    process.exit(0);
+  };
+  process.on('SIGTERM', shutdown);
+  process.on('SIGINT', shutdown);
 }

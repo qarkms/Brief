@@ -300,11 +300,12 @@ export class Room {
 }
 
 export class RoomManager {
-  constructor(onChange, onRemove = () => {}, { file = null } = {}) {
+  constructor(onChange, onRemove = () => {}, { file = null, onSaved = null } = {}) {
     this.rooms = new Map();
     this.onChange = onChange;
     this.onRemove = onRemove;
     this.file = file;
+    this.onSaved = onSaved; // 저장할 때마다 (바깥 저장소에도 올리기)
     this.saveTimer = null;
     this.load();
   }
@@ -337,8 +338,10 @@ export class RoomManager {
     try {
       fs.mkdirSync(path.dirname(this.file), { recursive: true });
       const tmp = `${this.file}.tmp`;
-      fs.writeFileSync(tmp, JSON.stringify([...this.rooms.values()].map((r) => r.serialize())));
+      const json = JSON.stringify([...this.rooms.values()].map((r) => r.serialize()));
+      fs.writeFileSync(tmp, json);
       fs.renameSync(tmp, this.file);
+      this.onSaved?.(json);
     } catch (e) {
       console.error('방 저장 실패', e.message);
     }
