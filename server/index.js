@@ -6,6 +6,9 @@ import { WebSocketServer } from 'ws';
 import { cleanTitle, ROOM_CODE, RoomManager } from './rooms.js';
 import { MAX_SHEET_BYTES, SheetStore } from './sheets.js';
 import { RemoteStore } from './remote.js';
+import {
+  AccountError, AccountStore, MAX_BLOB_BYTES, MAX_VAULT_BYTES,
+} from './accounts.js';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const PUBLIC_DIR = path.join(ROOT, 'public');
@@ -122,6 +125,63 @@ function readBody(req, limit) {
 
 export function createServer({ dataDir = process.env.DATA_DIR || path.resolve('data'), remote = null } = {}) {
   const sheets = new SheetStore(path.join(dataDir, 'sheets'), { remote });
+  const accounts = new AccountStore(path.join(dataDir, 'accounts'), { remote });
+
+  // ---------- 계정 (선택) ----------
+  const clientIp = (req) => String(req.headers['x-forwarded-for'] || req.socket.remoteAddress || '').split(',')[0].trim();
+  async function readJson(req, limit) {
+    const buf = await readBody(req, limit);
+    try {
+      return JSON.parse(buf.toString('utf8') || '{}');
+    } catch {
+      throw new AccountError('BAD_DATA');
+    }
+  }
+  async function accountApi(req, res, route, url) {
+    const auth = req.headers['x-echad-account'];
+    try {
+      const m = req.method;
+      if (route === 'signup' && m === 'POST') return json(res, 200, await accounts.signup(await readJson(req, 4096)));
+      if (route === 'login' && m === 'POST') return json(res, 200, await accounts.login(await readJson(req, 4096), clientIp(req)));
+      if (route === 'logout' && m === 'POST') {
+        await accounts.logout(auth);
+        return json(res, 200, { ok: true });
+      }
+      if (route === 'password' && m === 'POST') return json(res, 200, await accounts.changePassword(auth, await readJson(req, 4096)));
+      if (route === 'delete' && m === 'POST') {
+        await accounts.remove(auth, await readJson(req, 4096));
+        return json(res, 200, { ok: true });
+      }
+      if (route === 'vault' && m === 'GET') return json(res, 200, await accounts.getVault(auth, url.searchParams.get('since')));
+      if (route === 'vault' && m === 'PUT') {
+        await accounts.auth(auth); // 큰 본문을 받기 전에 로그인부터 확인
+        return json(res, 200, await accounts.putVault(auth, url.searchParams.get('base'), await readJson(req, MAX_VAULT_BYTES)));
+      }
+      if (route === 'blobs' && m === 'GET') return json(res, 200, { ids: await accounts.listBlobs(auth) });
+      const blob = route.match(/^blob\/([a-f0-9]{32})$/);
+      if (blob && m === 'PUT') {
+        await accounts.auth(auth);
+        const type = String(req.headers['content-type'] || '').split(';')[0].trim();
+        await accounts.putBlob(auth, blob[1], await readBody(req, MAX_BLOB_BYTES), type);
+        return json(res, 200, { ok: true });
+      }
+      if (blob && m === 'GET') {
+        const got = await accounts.getBlob(auth, blob[1]);
+        if (!got) return json(res, 404, { error: 'NOT_FOUND' });
+        res.writeHead(200, { 'content-type': got.type, 'content-length': got.buf.length, 'cache-control': 'private, no-store' }).end(got.buf);
+        return undefined;
+      }
+      return json(res, 404, { error: 'NOT_FOUND' });
+    } catch (e) {
+      if (e instanceof AccountError) {
+        if (e.retryAfter) res.setHeader('retry-after', String(e.retryAfter));
+        return json(res, e.status, { error: e.code, rev: e.rev, retryAfter: e.retryAfter });
+      }
+      if (e.message === 'TOO_LARGE') return json(res, 413, { error: 'TOO_LARGE' });
+      console.error('계정 처리 오류', e);
+      return json(res, 500, { error: 'SERVER' });
+    }
+  }
 
   // PUT /api/sheets/:id?room=CODE  (x-host-token 헤더 필요) — 방장만 업로드
   async function uploadSheet(req, res, id, url) {
@@ -166,6 +226,11 @@ export function createServer({ dataDir = process.env.DATA_DIR || path.resolve('d
     const { pathname } = url;
     if (pathname === '/healthz') {
       res.writeHead(200, { 'content-type': 'text/plain' }).end('ok');
+      return;
+    }
+    const acct = pathname.match(/^\/api\/account\/([a-z]+(?:\/[a-f0-9]{32})?)$/);
+    if (acct) {
+      accountApi(req, res, acct[1], url);
       return;
     }
     const sheetUpload = pathname.match(/^\/api\/sheets\/([a-f0-9]{32})$/);
@@ -368,7 +433,7 @@ export function createServer({ dataDir = process.env.DATA_DIR || path.resolve('d
   });
 
   return {
-    server, wss, rooms, sheets,
+    server, wss, rooms, sheets, accounts,
   };
 }
 

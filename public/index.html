@@ -114,7 +114,7 @@
           <button id="btn-lib-export" class="btn ghost sm"><span data-icon="download"></span>보관함 백업</button>
           <label class="btn ghost sm file-btn"><span data-icon="upload"></span>백업 불러오기<input type="file" id="lib-import" accept="application/json,.json" hidden></label>
         </div>
-        <p class="hint">백업 파일에는 곡과 셋리스트가 들어가요. 악보 그림은 이 기기에만 보관돼요.</p>
+        <p class="hint">백업 파일에는 곡과 셋리스트가 들어가요. 악보 그림은 이 기기에만 보관돼요. 내 정보에서 계정을 만들면 악보 그림과 필기까지 계정에 보관돼요.</p>
       </div>
 
       <!-- 내 정보 -->
@@ -126,6 +126,35 @@
             <input id="me-name" class="input" maxlength="24" placeholder="예: 드럼 민수" autocomplete="nickname">
           </label>
           <button id="btn-me-settings" class="btn soft block"><span data-icon="sliders"></span>소리·목소리·지연 설정</button>
+        </div>
+        <div class="card me-card acct-card">
+          <h3>계정 <span class="opt">선택</span></h3>
+          <p class="hint">꼭 만들지 않아도 돼요. 만들지 않으면 지금처럼 이 기기에만 저장돼요.</p>
+          <div id="acct-out">
+            <p class="acct-why">아이디와 비밀번호를 만들어 두면 <b>앱을 지웠거나 기기를 바꿔도</b> 로그인만 하면 그대로 돌아와요.</p>
+            <ul class="acct-list">
+              <li>방장 · 부방장 권한과 내 방 목록</li>
+              <li>보관함의 곡 · 셋리스트</li>
+              <li>내 악보와 필기</li>
+              <li>내 이름과 소리 설정</li>
+            </ul>
+            <div class="row acct-btns">
+              <button id="btn-acct-signup" class="btn primary">계정 만들기</button>
+              <button id="btn-acct-login" class="btn soft">로그인</button>
+            </div>
+            <p class="hint acct-warn">비밀번호는 찾을 수 없어요. 이메일 인증이 없어서 잊어버리면 되찾을 방법이 없으니 꼭 기억해 두세요.</p>
+          </div>
+          <div id="acct-in" class="hidden">
+            <p class="acct-who"><span class="presence on"><i class="dot"></i></span><b id="acct-id"></b> 계정으로 로그인됨</p>
+            <p id="acct-sync" class="hint"></p>
+            <p class="hint">이 기기에서 바꾼 내용은 자동으로 계정에 저장돼요. 다른 기기에서도 같은 아이디로 로그인하면 똑같이 보여요.</p>
+            <div class="row wrap acct-btns">
+              <button id="btn-acct-sync" class="btn soft sm">지금 동기화</button>
+              <button id="btn-acct-password" class="btn ghost sm">비밀번호 바꾸기</button>
+              <button id="btn-acct-logout" class="btn ghost sm">로그아웃</button>
+              <button id="btn-acct-delete" class="btn ghost sm danger">계정 지우기</button>
+            </div>
+          </div>
         </div>
         <div class="card me-card tips">
           <h3>이렇게 써요</h3>
@@ -291,6 +320,27 @@
     </div>
     <div class="sheet-body"><input id="name-input" class="input" maxlength="24" placeholder="예: 드럼 민수" autocomplete="nickname"></div>
     <div class="sheet-foot"><button id="name-ok" class="btn primary block lg">확인</button></div>
+  </dialog>
+
+  <dialog id="dlg-account" class="sheet">
+    <div class="sheet-head">
+      <div><h2 id="acct-title">계정</h2><p id="acct-desc" class="hint"></p></div>
+      <button class="icon-btn round soft" data-close aria-label="닫기"><span data-icon="close"></span></button>
+    </div>
+    <form class="sheet-body" id="acct-form" autocomplete="on">
+      <label class="field" id="acct-f-id"><span class="field-label">아이디 (3~20자, 한글·영문·숫자)</span>
+        <input id="acct-id-input" name="username" class="input" maxlength="20" autocomplete="username" autocapitalize="none" spellcheck="false" placeholder="예: drum_minsu"></label>
+      <label class="field" id="acct-f-pw"><span class="field-label" id="acct-pw-label">비밀번호</span>
+        <input id="acct-pw" type="password" class="input" maxlength="128"></label>
+      <label class="field" id="acct-f-pw2"><span class="field-label" id="acct-pw2-label">비밀번호 한 번 더</span>
+        <input id="acct-pw2" type="password" class="input" maxlength="128" autocomplete="new-password"></label>
+      <label class="field" id="acct-f-pw3"><span class="field-label">새 비밀번호 한 번 더</span>
+        <input id="acct-pw3" type="password" class="input" maxlength="128" autocomplete="new-password"></label>
+      <p id="acct-note" class="hint"></p>
+      <p id="acct-error" class="error" role="alert"></p>
+      <button type="submit" hidden></button>
+    </form>
+    <div class="sheet-foot"><button id="acct-ok" class="btn primary block lg">확인</button></div>
   </dialog>
 
   <dialog id="dlg-join" class="sheet">

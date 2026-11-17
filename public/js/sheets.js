@@ -34,8 +34,22 @@ async function idb(mode, fn) {
   });
 }
 
-const cachePut = (id, blob) => idb('readwrite', (s) => s.put(blob, id)).catch(() => {});
+// 계정에 로그인돼 있으면: 새로 보관한 그림을 계정에도 올리고(onSaved), 기기에 없는 그림은 계정에서 받아 온다(fallback)
+const hooks = { onSaved: null, fallback: null };
+export const setBlobHooks = (h) => Object.assign(hooks, h);
+
+const cachePut = (id, blob) => idb('readwrite', (s) => s.put(blob, id)).then(() => hooks.onSaved?.(id, blob), () => {});
 const cacheGet = (id) => idb('readonly', (s) => s.get(id)).catch(() => undefined);
+export const getCachedBlob = cacheGet;
+export const listCachedIds = () => idb('readonly', (s) => s.getAllKeys()).catch(() => []);
+/** 기기에 있으면 그것, 없으면 계정에서 받아 기기에 보관 */
+async function getBlob(id) {
+  const blob = await cacheGet(id);
+  if (blob || !hooks.fallback) return blob;
+  const got = await hooks.fallback(id).catch(() => null);
+  if (got) await idb('readwrite', (s) => s.put(got, id)).catch(() => {});
+  return got || undefined;
+}
 
 // ---------- 변환 ----------
 function canvasToBlob(canvas) {
@@ -146,14 +160,14 @@ export async function uploadSheetFile(file, { onProgress, ...auth } = {}) {
  */
 export function setSheetImg(img, id, { local = false } = {}) {
   if (local) {
-    cacheGet(id).then((blob) => {
+    getBlob(id).then((blob) => {
       if (blob) img.src = URL.createObjectURL(blob);
     });
     return img;
   }
   img.onerror = async () => {
     img.onerror = null;
-    const blob = await cacheGet(id);
+    const blob = await getBlob(id);
     if (blob) img.src = URL.createObjectURL(blob);
   };
   img.src = sheetUrl(id);
@@ -172,7 +186,7 @@ export async function ensureSheets(setlist, auth) {
     try {
       const head = await fetch(sheetUrl(id), { method: 'HEAD' });
       if (head.ok) continue;
-      const blob = await cacheGet(id);
+      const blob = await getBlob(id);
       if (blob) {
         await put(id, blob, auth);
         restored++;

@@ -9,6 +9,7 @@ import {
   removeFromLibrary, removeRoom, removeSetlist,
 } from './library.js';
 import { uploadSheetFile } from './sheets.js';
+import * as account from './account.js';
 
 const $ = (id) => document.getElementById(id);
 let api = null; // app.js가 넘겨주는 기능들
@@ -58,6 +59,7 @@ export function showHomeTab(name) {
   document.querySelectorAll('.tabbar .tab').forEach((b) => b.classList.toggle('active', b.dataset.tab === name));
   window.scrollTo(0, 0);
   if (name === 'home') refreshRooms();
+  if (name === 'me') renderAccount();
 }
 
 // ---------- 내 방 ----------
@@ -471,8 +473,185 @@ export function initHome(a) {
     }
   };
 
+  bindAccount();
   renderHello();
   renderLibrary();
+}
+
+// ---------- 계정 (선택) ----------
+function agoText(t) {
+  const min = Math.floor((Date.now() - t) / 60000);
+  if (min < 1) return '방금';
+  if (min < 60) return `${min}분 전`;
+  const h = Math.floor(min / 60);
+  return h < 24 ? `${h}시간 전` : `${Math.floor(h / 24)}일 전`;
+}
+
+function renderAccount() {
+  const st = account.status();
+  $('acct-out').classList.toggle('hidden', !!st);
+  $('acct-in').classList.toggle('hidden', !st);
+  if (!st) return;
+  $('acct-id').textContent = st.id;
+  let line;
+  if (st.syncing) line = '계정에 저장하는 중…';
+  else if (st.error) line = `저장하지 못했어요: ${st.error}`;
+  else if (st.dirty) line = '아직 계정에 저장되지 않은 변경이 있어요';
+  else if (st.at) line = `마지막 저장 ${agoText(st.at)} · 모두 저장됨`;
+  else line = '';
+  $('acct-sync').textContent = line;
+}
+
+const ACCT_MODES = {
+  signup: {
+    title: '계정 만들기',
+    desc: '지금 이 기기의 데이터와 방장·부방장 권한이 그대로 계정에 저장돼요.',
+    fields: ['id', 'pw', 'pw2'],
+    pw: '비밀번호 (6자 이상)',
+    pw2: '비밀번호 한 번 더',
+    note: '비밀번호는 찾을 수 없어요. 꼭 기억해 두세요.',
+    ok: '계정 만들기',
+  },
+  login: {
+    title: '로그인',
+    desc: '계정에 저장된 데이터를 이 기기로 가져와요. 이 기기에만 있던 곡·셋리스트도 사라지지 않고 합쳐져요.',
+    fields: ['id', 'pw'],
+    pw: '비밀번호',
+    ok: '로그인',
+  },
+  password: {
+    title: '비밀번호 바꾸기',
+    desc: '바꾸면 다른 기기의 로그인은 풀려요. 그 기기에서는 새 비밀번호로 다시 로그인하세요.',
+    fields: ['pw', 'pw2', 'pw3'],
+    pw: '지금 비밀번호',
+    pw2: '새 비밀번호 (6자 이상)',
+    ok: '바꾸기',
+  },
+  delete: {
+    title: '계정 지우기',
+    desc: '서버에 맡긴 데이터와 악보 그림이 모두 지워져요. 이 기기에 있는 데이터는 그대로 남아요.',
+    fields: ['pw'],
+    pw: '비밀번호',
+    ok: '계정 지우기',
+  },
+};
+let acctMode = 'login';
+
+function openAccount(mode) {
+  acctMode = mode;
+  const m = ACCT_MODES[mode];
+  $('acct-title').textContent = m.title;
+  $('acct-desc').textContent = m.desc;
+  $('acct-pw-label').textContent = m.pw;
+  $('acct-pw2-label').textContent = m.pw2 || '';
+  $('acct-note').textContent = m.note || '';
+  $('acct-ok').textContent = m.ok;
+  $('acct-ok').classList.toggle('danger-fill', mode === 'delete');
+  for (const f of ['id', 'pw', 'pw2', 'pw3']) $(`acct-f-${f}`).classList.toggle('hidden', !m.fields.includes(f));
+  for (const id of ['acct-id-input', 'acct-pw', 'acct-pw2', 'acct-pw3']) $(id).value = '';
+  // 비밀번호 관리자가 알맞게 채우도록
+  $('acct-pw').autocomplete = mode === 'signup' ? 'new-password' : 'current-password';
+  $('acct-error').textContent = '';
+  $('acct-ok').disabled = false;
+  $('dlg-account').showModal();
+  setTimeout(() => (m.fields.includes('id') ? $('acct-id-input') : $('acct-pw')).focus(), 50);
+}
+
+async function submitAccount() {
+  const id = $('acct-id-input').value.trim();
+  const pw = $('acct-pw').value;
+  const pw2 = $('acct-pw2').value;
+  const pw3 = $('acct-pw3').value;
+  const err = (t) => { $('acct-error').textContent = t; };
+  if (acctMode === 'signup' || acctMode === 'login') {
+    if (!id) return err('아이디를 입력하세요');
+    if (!pw) return err('비밀번호를 입력하세요');
+  }
+  if (acctMode === 'signup') {
+    if (pw.length < 6) return err('비밀번호는 6자 이상으로 정해 주세요');
+    if (pw !== pw2) return err('두 비밀번호가 달라요');
+  }
+  if (acctMode === 'password') {
+    if (!pw) return err('지금 비밀번호를 입력하세요');
+    if (pw2.length < 6) return err('새 비밀번호는 6자 이상으로 정해 주세요');
+    if (pw2 !== pw3) return err('새 비밀번호 두 개가 달라요');
+  }
+  if (acctMode === 'delete') {
+    if (!pw) return err('비밀번호를 입력하세요');
+    if (!confirm('정말 계정을 지울까요? 되돌릴 수 없어요.')) return;
+  }
+  err('');
+  $('acct-ok').disabled = true;
+  $('acct-ok').textContent = '잠시만요…';
+  try {
+    if (acctMode === 'signup') {
+      const nid = await account.signup(id, pw);
+      $('dlg-account').close();
+      api.toast(`계정 "${nid}"을 만들었어요. 이제 이 기기의 데이터가 계정에도 저장돼요`);
+    } else if (acctMode === 'login') {
+      const nid = await account.login(id, pw);
+      // 기기 키·권한이 바뀌었으니 앱을 새로 불러온다
+      sessionStorage.setItem('echad.loggedin', nid);
+      location.reload();
+      return;
+    } else if (acctMode === 'password') {
+      await account.changePassword(pw, pw2);
+      $('dlg-account').close();
+      api.toast('비밀번호를 바꿨어요');
+    } else if (acctMode === 'delete') {
+      await account.deleteAccount(pw);
+      $('dlg-account').close();
+      api.toast('계정을 지웠어요. 이 기기의 데이터는 그대로 있어요');
+    }
+  } catch (e) {
+    err(e.message || '잠시 뒤에 다시 해 주세요');
+  } finally {
+    $('acct-ok').disabled = false;
+    $('acct-ok').textContent = ACCT_MODES[acctMode].ok;
+    renderAccount();
+  }
+  return undefined;
+}
+
+function bindAccount() {
+  $('btn-acct-signup').onclick = () => openAccount('signup');
+  $('btn-acct-login').onclick = () => openAccount('login');
+  $('btn-acct-password').onclick = () => openAccount('password');
+  $('btn-acct-delete').onclick = () => openAccount('delete');
+  $('btn-acct-sync').onclick = async () => {
+    await account.sync();
+    const st = account.status();
+    api.toast(st?.error ? `저장하지 못했어요: ${st.error}` : '계정과 맞췄어요');
+  };
+  $('btn-acct-logout').onclick = async () => {
+    if (!confirm('로그아웃할까요? 이 기기의 데이터는 그대로 남고, 계정과 맞추는 것만 멈춰요.')) return;
+    await account.logout();
+    api.toast('로그아웃했어요');
+  };
+  $('acct-ok').onclick = submitAccount;
+  $('acct-form').addEventListener('submit', (e) => {
+    e.preventDefault();
+    submitAccount();
+  });
+  account.onAccount((type, detail) => {
+    renderAccount();
+    if (type === 'error') api.toast(detail);
+    // 다른 기기에서 바뀐 데이터가 들어오면 홈 목록을 새로
+    if (type === 'data' && !$('view-home').classList.contains('hidden')) {
+      renderHello();
+      renderLibrary();
+      renderRooms();
+    }
+  });
+  renderAccount();
+  setInterval(() => {
+    if (!$('tab-me').classList.contains('hidden')) renderAccount();
+  }, 30000);
+  const who = sessionStorage.getItem('echad.loggedin');
+  if (who) {
+    sessionStorage.removeItem('echad.loggedin');
+    setTimeout(() => api.toast(`"${who}" 계정의 데이터를 불러왔어요`), 600);
+  }
 }
 
 /** 홈이 보일 때 */

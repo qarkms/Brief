@@ -302,6 +302,17 @@ input[type=number]::-webkit-inner-spin-button, input[type=number]::-webkit-outer
 .backup-row { margin-top: 24px; }
 
 .me-card { margin-top: 14px; }
+.acct-card h3 { display: flex; align-items: center; gap: 8px; margin: 0 0 2px; }
+.acct-card .opt { font-size: 0.72rem; font-weight: 800; border-radius: 999px; padding: 3px 9px; background: #f1ead9; color: var(--muted); }
+.acct-why { margin: 10px 0 6px; line-height: 1.55; }
+.acct-list { margin: 0 0 14px; padding-left: 20px; color: var(--muted); line-height: 1.7; font-size: 0.92rem; }
+.acct-btns { margin: 6px 0 4px; }
+.acct-btns .btn:not(.sm) { flex: 1; }
+.acct-warn { color: #9a5b12; }
+.btn.danger-fill { background: var(--danger); color: #fff; box-shadow: none; }
+.acct-who { display: flex; align-items: center; gap: 8px; margin: 12px 0 2px; }
+.acct-who .presence { gap: 0; }
+
 .tips h3 { margin-top: 0; }
 .tips ol { margin: 10px 0 0; padding-left: 20px; line-height: 1.8; font-weight: 700; color: var(--muted); }
 .tips b { color: var(--text); }
